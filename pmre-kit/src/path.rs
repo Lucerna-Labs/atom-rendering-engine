@@ -8,7 +8,7 @@
 
 use crate::framebuffer::Framebuffer;
 use crate::geom::Vec2;
-use crate::paint::{Bounds, Rgba};
+use crate::paint::{Bounds, Paint};
 
 /// A path command in device space (absolute coordinates).
 #[derive(Clone, Copy, Debug)]
@@ -81,12 +81,12 @@ pub fn flatten(cmds: &[PathCmd]) -> Vec<Vec<Vec2>> {
 }
 
 /// Flatten and fill a command list in one call.
-pub fn fill_cmds(fb: &mut Framebuffer, cmds: &[PathCmd], color: Rgba, clip: Option<Bounds>) {
-    fill(fb, &flatten(cmds), color, clip);
+pub fn fill_cmds(fb: &mut Framebuffer, cmds: &[PathCmd], paint: Paint, clip: Option<Bounds>) {
+    fill(fb, &flatten(cmds), paint, clip);
 }
 
-/// Fill closed subpaths (device-space points) with `color`, clipped to `clip`.
-pub fn fill(fb: &mut Framebuffer, subpaths: &[Vec<Vec2>], color: Rgba, clip: Option<Bounds>) {
+/// Fill closed subpaths (device-space points) with `paint`, clipped to `clip`.
+pub fn fill(fb: &mut Framebuffer, subpaths: &[Vec<Vec2>], paint: Paint, clip: Option<Bounds>) {
     let mut minx = f32::INFINITY;
     let mut miny = f32::INFINITY;
     let mut maxx = f32::NEG_INFINITY;
@@ -156,8 +156,9 @@ pub fn fill(fb: &mut Framebuffer, subpaths: &[Vec<Vec2>], color: Rgba, clip: Opt
         }
         for (i, &c) in cov.iter().enumerate() {
             if c > 0.0 {
-                let px = (x0 + i as i32) as u32;
-                fb.blend_over(px, y as u32, color.with_alpha(color.a * c.min(1.0)));
+                let px = x0 + i as i32;
+                let col = paint.sample(Vec2::new(px as f32 + 0.5, y as f32 + 0.5));
+                fb.blend_over(px as u32, y as u32, col.with_alpha(col.a * c.min(1.0)));
             }
         }
     }
@@ -186,6 +187,7 @@ fn add_span(cov: &mut [f32], x0: i32, x1: i32, xa: f32, xb: f32, weight: f32) {
 mod tests {
     use super::*;
     use crate::framebuffer::Framebuffer;
+    use crate::paint::Rgba;
 
     #[test]
     fn flatten_polygon_keeps_one_subpath() {
@@ -222,7 +224,7 @@ mod tests {
             PathCmd::LineTo(Vec2::new(10.0, 30.0)),
             PathCmd::Close,
         ];
-        fill_cmds(&mut fb, &square, Rgba::new(1.0, 0.0, 0.0, 1.0), None);
+        fill_cmds(&mut fb, &square, Paint::Solid(Rgba::new(1.0, 0.0, 0.0, 1.0)), None);
         let center = fb.pixel(20, 20);
         assert!(center.r > 0.95 && center.g < 0.05, "interior should be solid fill, got {center:?}");
         let outside = fb.pixel(2, 2);
@@ -247,9 +249,22 @@ mod tests {
             PathCmd::LineTo(Vec2::new(36.0, 24.0)),
             PathCmd::Close,
         ];
-        fill_cmds(&mut fb, &ring, Rgba::new(0.2, 0.4, 1.0, 1.0), None);
+        fill_cmds(&mut fb, &ring, Paint::Solid(Rgba::new(0.2, 0.4, 1.0, 1.0)), None);
         assert!(fb.pixel(12, 30).b > 0.5, "ring band should be filled");
         assert!(fb.pixel(30, 30).b < 0.2, "centre should be a hole");
+    }
+
+    #[test]
+    fn linear_gradient_interpolates() {
+        let g = Paint::Linear {
+            from: Vec2::new(0.0, 0.0),
+            to: Vec2::new(10.0, 0.0),
+            c0: Rgba::new(0.0, 0.0, 0.0, 1.0),
+            c1: Rgba::new(1.0, 1.0, 1.0, 1.0),
+        };
+        assert!(g.sample(Vec2::new(0.0, 0.0)).r < 0.01, "start is c0");
+        assert!(g.sample(Vec2::new(10.0, 0.0)).r > 0.99, "end is c1");
+        assert!((g.sample(Vec2::new(5.0, 0.0)).r - 0.5).abs() < 0.05, "midpoint is halfway");
     }
 }
 

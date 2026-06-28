@@ -8,7 +8,7 @@
 
 use crate::framebuffer::Framebuffer;
 use crate::geom::Vec2;
-use crate::paint::{Bounds, DrawCmd, Paint, Shape};
+use crate::paint::{Bounds, DrawCmd, Shape};
 
 /// Signed distance to the shape boundary in its local space: negative inside, positive outside.
 pub fn signed_distance(shape: &Shape, p: Vec2) -> f32 {
@@ -48,7 +48,6 @@ pub fn scan_convert(cmd: &DrawCmd, fb: &mut Framebuffer, clip: Option<Bounds>) {
     let inv = cmd.transform.inverse();
     // One device pixel measured in local units — the width of the anti-aliasing band.
     let aa = (1.0 / cmd.transform.scale_factor().max(1e-6)).max(1e-4);
-    let Paint::Solid(base) = cmd.paint;
     let (x0, y0, x1, y1) = device_bounds(cmd, fb.width, fb.height, clip);
     for y in y0..y1 {
         for x in x0..x1 {
@@ -57,7 +56,9 @@ pub fn scan_convert(cmd: &DrawCmd, fb: &mut Framebuffer, clip: Option<Bounds>) {
             let d = signed_distance(&cmd.shape, local);
             let cov = coverage(d, aa);
             if cov > 0.0 {
-                fb.blend_over(x, y, base.with_alpha(base.a * cov));
+                // Sample the paint at the shape-local point (gradients move with the shape).
+                let col = cmd.paint.sample(local);
+                fb.blend_over(x, y, col.with_alpha(col.a * cov));
             }
         }
     }

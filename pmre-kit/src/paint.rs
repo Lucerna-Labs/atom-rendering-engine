@@ -80,10 +80,42 @@ impl Shape {
     }
 }
 
-/// How a shape is filled. `Solid` carries a single color through to the rasterizer.
+/// How a shape is filled. Two-stop gradients are sampled per pixel by the rasterizer.
+/// Coordinates are in the shape's local space (for SDF shapes) or device space (for paths).
 #[derive(Clone, Copy, Debug)]
 pub enum Paint {
     Solid(Rgba),
+    /// Linear gradient: `c0` at `from`, `c1` at `to`, clamped past the ends.
+    Linear { from: Vec2, to: Vec2, c0: Rgba, c1: Rgba },
+    /// Radial gradient: `c0` at `center`, `c1` at `radius`.
+    Radial { center: Vec2, radius: f32, c0: Rgba, c1: Rgba },
+}
+
+impl Paint {
+    /// The color of this paint at point `p`.
+    pub fn sample(&self, p: Vec2) -> Rgba {
+        match *self {
+            Paint::Solid(c) => c,
+            Paint::Linear { from, to, c0, c1 } => {
+                let d = to - from;
+                let t = ((p - from).dot(d) / d.dot(d).max(1e-6)).clamp(0.0, 1.0);
+                lerp_rgba(c0, c1, t)
+            }
+            Paint::Radial { center, radius, c0, c1 } => {
+                let t = ((p - center).length() / radius.max(1e-6)).clamp(0.0, 1.0);
+                lerp_rgba(c0, c1, t)
+            }
+        }
+    }
+}
+
+fn lerp_rgba(a: Rgba, b: Rgba, t: f32) -> Rgba {
+    Rgba::new(
+        a.r + (b.r - a.r) * t,
+        a.g + (b.g - a.g) * t,
+        a.b + (b.b - a.b) * t,
+        a.a + (b.a - a.a) * t,
+    )
 }
 
 /// One drawing instruction: a shape, how to fill it, and where to place it.
