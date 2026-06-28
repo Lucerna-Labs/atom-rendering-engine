@@ -50,8 +50,9 @@ painter's algorithm.
 - **Interaction** — buttons (hover / press / click), toggles, a scrollable region with clipping,
   a live scrollbar (wheel scroll **and** thumb drag), hit-testing, and auto-resize reflow.
 - **Text input** — focusable fields with typed characters, backspace, a caret, and Enter-to-submit.
-- **Live window** — a winit + softbuffer runner that blits the CPU framebuffer straight to the
-  screen with real mouse, wheel, and resize events.
+- **Live window, zero dependencies** — the interactive todo window (`examples/app.rs`) drives the
+  OS window **directly via raw Win32/GDI FFI** — no winit, no softbuffer, no crates — blitting the
+  CPU framebuffer to the screen with real mouse, wheel, keyboard, and resize events.
 
 | Paths & holes | Gradients | Strokes |
 |---|---|---|
@@ -64,6 +65,10 @@ layout, buttons, toggles, scroll, **text input**, and click handling end to end.
 real interaction sequence through the engine and asserts the result before rendering.
 
 ![todo](docs/todo.png)
+
+The todo list also runs as a **live, interactive, zero-dependency window** —
+`cargo run -p pmre-orchestrator --example app` — where you type tasks, press Enter to add, click
+the box to check one off, and `x` to delete. The window itself is raw Win32/GDI, no crates.
 
 ## Build & run
 
@@ -85,9 +90,9 @@ cargo run -p pmre-orchestrator --example ui
 cargo run -p pmre-orchestrator --example app
 ```
 
-Each example writes its image to the working directory. Only the `app` example pulls in
-dependencies (`winit`, `softbuffer`) for OS windowing and CPU presentation; the library crates
-stay dependency-free pure math.
+Each headless example writes its image to the working directory. **Nothing pulls in any
+dependency** — `cargo tree` shows the whole workspace, library *and* examples, depending on zero
+external crates. The live window (`app`) calls the OS windowing API directly via raw FFI.
 
 ## Tests
 

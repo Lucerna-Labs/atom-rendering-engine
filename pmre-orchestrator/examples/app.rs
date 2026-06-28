@@ -1,270 +1,583 @@
-//! Live interactive window. Real mouse clicks, wheel scrolling, and resizing drive the same
-//! `render_ui` / `handle_event` engine the headless `ui` example exercises. The kit and the
-//! orchestrator library stay dependency-free; only this runner uses winit + softbuffer (a
-//! pure-CPU presentation surface — our math framebuffer is blitted straight to the window).
+//! A live, interactive **todo app** with ZERO external crates. The engine renders pure math
+//! into a CPU framebuffer; this runner drives a real OS window directly via raw Win32/GDI FFI
+//! — no winit, no softbuffer, no dependencies at all. Type a task and press Enter (or click
+//! ADD) to add it, click the box to check it off, x to delete, wheel or drag the bar to scroll.
+//!
+//! Windows-only (it uses the Win32 API directly). The engine itself renders on every platform
+//! with no dependencies — the other examples write images with no window.
 //!
 //! Run: cargo run -p pmre-orchestrator --example app
 
-use std::num::NonZeroU32;
-use std::rc::Rc;
-
-use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
-use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::window::{Window, WindowId};
+#![allow(non_snake_case)]
+#![allow(clippy::upper_case_acronyms)] // FFI type aliases mirror the Win32 names
 
 use pmre_kit::{
     ux::{Align, Dim, Edges, Justify, Style, UxNode},
     Rgba,
 };
-use pmre_orchestrator::{handle_event, render_ui, UiEvent, UiState};
+use pmre_orchestrator::UiState;
 
-const BG: Rgba = Rgba::new(0.078, 0.086, 0.110, 1.0);
-const PANEL: Rgba = Rgba::new(0.118, 0.129, 0.161, 1.0);
+const BG: Rgba = Rgba::new(0.075, 0.082, 0.106, 1.0);
+const NEW_INPUT: u32 = 1;
+const ADD: u32 = 2;
+const LIST: u32 = 99;
+const CHECK_BASE: u32 = 1000;
+const DEL_BASE: u32 = 2000;
+
+pub struct Todo {
+    pub text: String,
+    pub done: bool,
+}
 
 fn white() -> Rgba {
-    Rgba::rgb8(235, 239, 247)
+    Rgba::rgb8(236, 240, 248)
 }
 fn muted() -> Rgba {
-    Rgba::rgb8(150, 158, 174)
+    Rgba::rgb8(140, 148, 164)
+}
+fn accent() -> Rgba {
+    Rgba::rgb8(86, 150, 252)
 }
 
-const TOG_DARK: u32 = 1;
-const BTN_SAVE: u32 = 2;
-const BTN_CANCEL: u32 = 3;
-const TOG_OPT: u32 = 4;
-const LIST: u32 = 10;
+fn input_field(ui: &UiState) -> UxNode {
+    let txt = ui.input_text(NEW_INPUT);
+    let focused = ui.is_focused(NEW_INPUT);
+    let placeholder = txt.is_empty() && !focused;
+    let label = if placeholder {
+        "type a task, press Enter"
+    } else {
+        txt
+    };
+    let mut children = vec![UxNode::text(
+        label,
+        16.0,
+        if placeholder { muted() } else { white() },
+    )];
+    if focused {
+        children.push(UxNode::boxed(
+            Style::col().w(Dim::Px(2.0)).h(Dim::Px(22.0)).bg(white()),
+            vec![],
+        ));
+    }
+    UxNode::boxed(
+        Style::row()
+            .input(NEW_INPUT)
+            .w(Dim::Flex(1.0))
+            .h(Dim::Px(42.0))
+            .align(Align::Center)
+            .pad(Edges::xy(12.0, 0.0))
+            .radius(8.0)
+            .bg(Rgba::rgb8(26, 29, 38))
+            .border(
+                1.0,
+                if focused {
+                    accent()
+                } else {
+                    Rgba::rgb8(48, 52, 66)
+                },
+            ),
+        children,
+    )
+}
 
-fn button(s: &UiState, id: u32, label: &str, base: Rgba) -> UxNode {
-    let bg = if s.is_pressed(id) {
-        Rgba::rgb8(40, 44, 56)
-    } else if s.is_hover(id) {
-        Rgba::new(base.r * 1.25, base.g * 1.25, base.b * 1.25, 1.0)
+fn add_button(s: &UiState) -> UxNode {
+    let base = accent();
+    let bg = if s.is_pressed(ADD) {
+        Rgba::new(base.r * 0.7, base.g * 0.7, base.b * 0.7, 1.0)
+    } else if s.is_hover(ADD) {
+        Rgba::new(base.r * 1.2, base.g * 1.2, base.b * 1.2, 1.0)
     } else {
         base
     };
     UxNode::boxed(
         Style::row()
-            .button(id)
-            .w(Dim::Flex(1.0))
-            .h(Dim::Px(40.0))
+            .button(ADD)
+            .w(Dim::Px(72.0))
+            .h(Dim::Px(42.0))
             .radius(8.0)
             .bg(bg)
             .align(Align::Center)
             .justify(Justify::Center),
-        vec![UxNode::text(label, 14.0, white())],
+        vec![UxNode::text("ADD", 14.0, white())],
     )
 }
 
-fn toggle(s: &UiState, id: u32) -> UxNode {
-    let on = s.toggle_on(id);
-    let track = if on {
-        Rgba::rgb8(52, 199, 130)
-    } else {
-        Rgba::rgb8(70, 74, 90)
-    };
-    let knob = UxNode::boxed(
-        Style::col()
-            .w(Dim::Px(22.0))
-            .h(Dim::Px(22.0))
-            .radius(11.0)
-            .bg(white()),
+fn todo_row(i: usize, todo: &Todo) -> UxNode {
+    let check = UxNode::boxed(
+        Style::row()
+            .button(CHECK_BASE + i as u32)
+            .w(Dim::Px(26.0))
+            .h(Dim::Px(26.0))
+            .radius(6.0)
+            .bg(if todo.done {
+                Rgba::rgb8(52, 199, 130)
+            } else {
+                Rgba::rgb8(32, 36, 46)
+            })
+            .border(1.0, Rgba::rgb8(70, 76, 92)),
         vec![],
     );
-    UxNode::boxed(
-        Style::row()
-            .toggle(id)
-            .w(Dim::Px(52.0))
-            .h(Dim::Px(28.0))
-            .radius(14.0)
-            .bg(track)
-            .align(Align::Center)
-            .pad(Edges::xy(3.0, 0.0))
-            .justify(if on { Justify::End } else { Justify::Start }),
-        vec![knob],
-    )
-}
-
-fn row(i: u32) -> UxNode {
-    let shade = if i.is_multiple_of(2) { 30 } else { 36 };
-    UxNode::boxed(
-        Style::row()
-            .h(Dim::Px(40.0))
-            .radius(8.0)
-            .bg(Rgba::rgb8(shade, shade + 3, shade + 10))
-            .align(Align::Center)
-            .pad(Edges::xy(12.0, 0.0)),
-        vec![UxNode::text(
-            format!("ITEM {i:02} - CLICK A TOGGLE, DRAG NOTHING, SCROLL ME"),
-            13.0,
-            muted(),
-        )],
-    )
-}
-
-fn build(s: &UiState) -> UxNode {
+    let label_color = if todo.done { muted() } else { white() };
     let spacer = UxNode::boxed(Style::row().w(Dim::Flex(1.0)).h(Dim::Px(1.0)), vec![]);
-    let header = UxNode::boxed(
+    let del = UxNode::boxed(
         Style::row()
-            .h(Dim::Px(56.0))
-            .bg(PANEL)
+            .button(DEL_BASE + i as u32)
+            .w(Dim::Px(26.0))
+            .h(Dim::Px(26.0))
+            .radius(6.0)
+            .bg(Rgba::rgb8(86, 56, 64))
             .align(Align::Center)
-            .pad(Edges::xy(18.0, 0.0))
-            .gap(14.0),
+            .justify(Justify::Center),
+        vec![UxNode::text("x", 14.0, Rgba::rgb8(240, 200, 205))],
+    );
+    UxNode::boxed(
+        Style::row()
+            .h(Dim::Px(44.0))
+            .align(Align::Center)
+            .gap(10.0)
+            .pad(Edges::xy(8.0, 0.0))
+            .radius(8.0)
+            .bg(Rgba::rgb8(30, 33, 43)),
         vec![
-            UxNode::text("CONTROLS", 18.0, white()),
+            check,
+            UxNode::text(todo.text.clone(), 15.0, label_color),
             spacer,
-            UxNode::text("DARK MODE", 13.0, muted()),
-            toggle(s, TOG_DARK),
+            del,
         ],
+    )
+}
+
+fn build(todos: &[Todo], s: &UiState) -> UxNode {
+    let header = UxNode::boxed(
+        Style::row().h(Dim::Px(34.0)).align(Align::Center),
+        vec![UxNode::text("MY TASKS", 22.0, white())],
     );
-    let sidebar = UxNode::boxed(
-        Style::col()
-            .w(Dim::Px(190.0))
-            .h(Dim::Flex(1.0))
-            .bg(PANEL)
-            .pad(Edges::all(16.0))
-            .gap(12.0),
-        vec![
-            UxNode::text("ACTIONS", 12.0, muted()),
-            button(s, BTN_SAVE, "SAVE", Rgba::rgb8(48, 110, 210)),
-            button(s, BTN_CANCEL, "CANCEL", Rgba::rgb8(70, 74, 90)),
-            UxNode::text("OPTION", 12.0, muted()),
-            UxNode::boxed(
-                Style::row().align(Align::Center).gap(10.0).h(Dim::Px(28.0)),
-                vec![toggle(s, TOG_OPT), UxNode::text("ENABLED", 13.0, muted())],
-            ),
-        ],
+    let input_row = UxNode::boxed(
+        Style::row().h(Dim::Px(42.0)).gap(10.0),
+        vec![input_field(s), add_button(s)],
     );
+    let rows: Vec<UxNode> = todos
+        .iter()
+        .enumerate()
+        .map(|(i, t)| todo_row(i, t))
+        .collect();
     let list = UxNode::boxed(
         Style::col()
             .scroll(LIST)
             .w(Dim::Flex(1.0))
             .h(Dim::Flex(1.0))
-            .bg(Rgba::rgb8(24, 26, 33))
-            .pad(Edges::all(12.0))
-            .gap(8.0),
-        (0..20).map(row).collect(),
-    );
-    let body = UxNode::boxed(
-        Style::row().w(Dim::Flex(1.0)).h(Dim::Flex(1.0)),
-        vec![sidebar, list],
+            .gap(8.0)
+            .pad(Edges::all(8.0))
+            .radius(10.0)
+            .bg(Rgba::rgb8(20, 22, 30)),
+        rows,
     );
     UxNode::boxed(
-        Style::col().w(Dim::Flex(1.0)).h(Dim::Flex(1.0)).bg(BG),
-        vec![header, body],
+        Style::col()
+            .w(Dim::Flex(1.0))
+            .h(Dim::Flex(1.0))
+            .pad(Edges::all(16.0))
+            .gap(12.0)
+            .bg(BG),
+        vec![header, input_row, list],
     )
 }
 
-#[derive(Default)]
-struct App {
-    window: Option<Rc<Window>>,
-    context: Option<softbuffer::Context<Rc<Window>>>,
-    surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
-    state: UiState,
-    cursor: (f32, f32),
+fn add_todo(todos: &mut Vec<Todo>, ui: &mut UiState) {
+    let text = ui.input_text(NEW_INPUT).trim().to_string();
+    if !text.is_empty() {
+        todos.push(Todo { text, done: false });
+    }
+    ui.clear_input(NEW_INPUT);
+    ui.focused = Some(NEW_INPUT); // keep typing the next task
 }
 
-impl App {
-    fn redraw(&self) {
-        if let Some(w) = &self.window {
-            w.request_redraw();
+fn apply_click(todos: &mut Vec<Todo>, ui: &mut UiState, id: u32) {
+    if id == ADD {
+        add_todo(todos, ui);
+    } else if (CHECK_BASE..DEL_BASE).contains(&id) {
+        let i = (id - CHECK_BASE) as usize;
+        if let Some(t) = todos.get_mut(i) {
+            t.done = !t.done;
         }
-    }
-
-    fn paint(&mut self) {
-        let (Some(window), Some(surface)) = (&self.window, &mut self.surface) else {
-            return;
-        };
-        let (w, h) = (self.state.width.max(1), self.state.height.max(1));
-        surface
-            .resize(NonZeroU32::new(w).unwrap(), NonZeroU32::new(h).unwrap())
-            .unwrap();
-        let build_ref: &dyn Fn(&UiState) -> UxNode = &build;
-        let fb = render_ui(build_ref, &self.state, BG);
-        let pixels = fb.to_u32(BG);
-        let mut buf = surface.buffer_mut().unwrap();
-        let n = buf.len().min(pixels.len());
-        buf[..n].copy_from_slice(&pixels[..n]);
-        window.pre_present_notify();
-        buf.present().unwrap();
-    }
-}
-
-impl ApplicationHandler for App {
-    fn resumed(&mut self, el: &ActiveEventLoop) {
-        if self.window.is_some() {
-            return;
-        }
-        let attrs = Window::default_attributes()
-            .with_title("pmre — pure-math UI")
-            .with_inner_size(LogicalSize::new(960.0, 620.0));
-        let window = Rc::new(el.create_window(attrs).expect("create window"));
-        let context = softbuffer::Context::new(window.clone()).expect("softbuffer context");
-        let surface =
-            softbuffer::Surface::new(&context, window.clone()).expect("softbuffer surface");
-        let size = window.inner_size();
-        self.state = UiState::new(size.width.max(1), size.height.max(1));
-        self.window = Some(window.clone());
-        self.context = Some(context);
-        self.surface = Some(surface);
-        window.request_redraw();
-    }
-
-    fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        let build_ref: &dyn Fn(&UiState) -> UxNode = &build;
-        match event {
-            WindowEvent::CloseRequested => el.exit(),
-            WindowEvent::Resized(sz) => {
-                handle_event(
-                    &mut self.state,
-                    build_ref,
-                    UiEvent::Resize(sz.width.max(1), sz.height.max(1)),
-                );
-                self.redraw();
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                self.cursor = (position.x as f32, position.y as f32);
-                handle_event(
-                    &mut self.state,
-                    build_ref,
-                    UiEvent::PointerMove(self.cursor.0, self.cursor.1),
-                );
-                self.redraw();
-            }
-            WindowEvent::MouseInput {
-                state,
-                button: MouseButton::Left,
-                ..
-            } => {
-                let (x, y) = self.cursor;
-                let ev = if state == ElementState::Pressed {
-                    UiEvent::PointerDown(x, y)
-                } else {
-                    UiEvent::PointerUp(x, y)
-                };
-                handle_event(&mut self.state, build_ref, ev);
-                self.redraw();
-            }
-            WindowEvent::MouseWheel { delta, .. } => {
-                let dy = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => y * 48.0,
-                    MouseScrollDelta::PixelDelta(p) => p.y as f32,
-                };
-                let (x, y) = self.cursor;
-                handle_event(&mut self.state, build_ref, UiEvent::Wheel(x, y, -dy));
-                self.redraw();
-            }
-            WindowEvent::RedrawRequested => self.paint(),
-            _ => {}
+    } else if id >= DEL_BASE {
+        let i = (id - DEL_BASE) as usize;
+        if i < todos.len() {
+            todos.remove(i);
         }
     }
 }
 
+#[cfg(windows)]
 fn main() {
-    let event_loop = EventLoop::new().expect("event loop");
-    event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = App::default();
-    event_loop.run_app(&mut app).expect("run app");
+    win::run();
+}
+
+#[cfg(not(windows))]
+fn main() {
+    println!(
+        "The live todo window uses the Win32 API and runs on Windows. The engine itself renders \
+         on every platform with zero dependencies — run the headless examples (todo, calc, ui, \
+         demo, paths, stroke, gradients, uxi, html) to see it draw to images."
+    );
+}
+
+/// Direct OS windowing via raw FFI — no winit, no softbuffer, no crates.
+#[cfg(windows)]
+mod win {
+    use super::{add_todo, apply_click, build, Todo, BG};
+    use core::ffi::c_void;
+    use pmre_kit::ux::UxNode;
+    use pmre_orchestrator::{handle_event, render_ui, UiEvent, UiState};
+    use std::cell::RefCell;
+
+    type HWND = *mut c_void;
+    type HINSTANCE = *mut c_void;
+    type HMENU = *mut c_void;
+    type HDC = *mut c_void;
+    type HICON = *mut c_void;
+    type HCURSOR = *mut c_void;
+    type HBRUSH = *mut c_void;
+    type WPARAM = usize;
+    type LPARAM = isize;
+    type LRESULT = isize;
+    type WndProc = Option<unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT>;
+
+    #[repr(C)]
+    struct WndClassW {
+        style: u32,
+        proc_: WndProc,
+        cls_extra: i32,
+        wnd_extra: i32,
+        instance: HINSTANCE,
+        icon: HICON,
+        cursor: HCURSOR,
+        background: HBRUSH,
+        menu_name: *const u16,
+        class_name: *const u16,
+    }
+    #[repr(C)]
+    struct Point {
+        x: i32,
+        y: i32,
+    }
+    #[repr(C)]
+    struct Rect {
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    }
+    #[repr(C)]
+    struct Msg {
+        hwnd: HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+        time: u32,
+        pt: Point,
+    }
+    #[repr(C)]
+    struct PaintStruct {
+        hdc: HDC,
+        erase: i32,
+        paint: Rect,
+        restore: i32,
+        inc_update: i32,
+        reserved: [u8; 32],
+    }
+    #[repr(C)]
+    struct BitmapInfoHeader {
+        size: u32,
+        width: i32,
+        height: i32,
+        planes: u16,
+        bit_count: u16,
+        compression: u32,
+        size_image: u32,
+        x_ppm: i32,
+        y_ppm: i32,
+        clr_used: u32,
+        clr_important: u32,
+    }
+    #[repr(C)]
+    struct BitmapInfo {
+        header: BitmapInfoHeader,
+        colors: [u32; 1],
+    }
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn RegisterClassW(c: *const WndClassW) -> u16;
+        fn CreateWindowExW(
+            ex: u32,
+            class: *const u16,
+            name: *const u16,
+            style: u32,
+            x: i32,
+            y: i32,
+            w: i32,
+            h: i32,
+            parent: HWND,
+            menu: HMENU,
+            inst: HINSTANCE,
+            param: *mut c_void,
+        ) -> HWND;
+        fn DefWindowProcW(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT;
+        fn GetMessageW(msg: *mut Msg, hwnd: HWND, min: u32, max: u32) -> i32;
+        fn TranslateMessage(msg: *const Msg) -> i32;
+        fn DispatchMessageW(msg: *const Msg) -> LRESULT;
+        fn PostQuitMessage(code: i32);
+        fn InvalidateRect(hwnd: HWND, rect: *const Rect, erase: i32) -> i32;
+        fn BeginPaint(hwnd: HWND, ps: *mut PaintStruct) -> HDC;
+        fn EndPaint(hwnd: HWND, ps: *const PaintStruct) -> i32;
+        fn LoadCursorW(inst: HINSTANCE, name: *const u16) -> HCURSOR;
+    }
+    #[link(name = "gdi32")]
+    extern "system" {
+        fn StretchDIBits(
+            hdc: HDC,
+            xd: i32,
+            yd: i32,
+            wd: i32,
+            hd: i32,
+            xs: i32,
+            ys: i32,
+            ws: i32,
+            hs: i32,
+            bits: *const c_void,
+            info: *const BitmapInfo,
+            usage: u32,
+            rop: u32,
+        ) -> i32;
+    }
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetModuleHandleW(name: *const u16) -> HINSTANCE;
+    }
+
+    const WS_OVERLAPPEDWINDOW: u32 = 0x00CF_0000;
+    const WS_VISIBLE: u32 = 0x1000_0000;
+    const CW_USEDEFAULT: i32 = 0x8000_0000u32 as i32;
+    const CS_HREDRAW: u32 = 0x0002;
+    const CS_VREDRAW: u32 = 0x0001;
+    const WM_DESTROY: u32 = 0x0002;
+    const WM_PAINT: u32 = 0x000F;
+    const WM_SIZE: u32 = 0x0005;
+    const WM_MOUSEMOVE: u32 = 0x0200;
+    const WM_LBUTTONDOWN: u32 = 0x0201;
+    const WM_LBUTTONUP: u32 = 0x0202;
+    const WM_MOUSEWHEEL: u32 = 0x020A;
+    const WM_CHAR: u32 = 0x0102;
+    const BI_RGB: u32 = 0;
+    const DIB_RGB_COLORS: u32 = 0;
+    const SRCCOPY: u32 = 0x00CC_0020;
+    const IDC_ARROW: usize = 32512;
+
+    struct App {
+        width: u32,
+        height: u32,
+        ui: UiState,
+        cursor: (f32, f32),
+        todos: Vec<Todo>,
+    }
+
+    thread_local! {
+        static APP: RefCell<Option<App>> = const { RefCell::new(None) };
+    }
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+    fn lo(l: LPARAM) -> f32 {
+        ((l & 0xFFFF) as i16) as f32
+    }
+    fn hi(l: LPARAM) -> f32 {
+        (((l >> 16) & 0xFFFF) as i16) as f32
+    }
+
+    /// Feed one event to the engine, then apply any resulting click / submit to the task list.
+    fn dispatch(ev: UiEvent) {
+        APP.with(|cell| {
+            if let Some(app) = cell.borrow_mut().as_mut() {
+                {
+                    let b = |s: &UiState| build(&app.todos, s);
+                    handle_event(&mut app.ui, &b, ev);
+                }
+                if let Some(id) = app.ui.take_click() {
+                    apply_click(&mut app.todos, &mut app.ui, id);
+                }
+                if app.ui.take_submit().is_some() {
+                    add_todo(&mut app.todos, &mut app.ui);
+                }
+            }
+        });
+    }
+
+    unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+        match msg {
+            WM_DESTROY => {
+                PostQuitMessage(0);
+                0
+            }
+            WM_SIZE => {
+                let w = (lp & 0xFFFF) as u32;
+                let h = ((lp >> 16) & 0xFFFF) as u32;
+                APP.with(|cell| {
+                    if let Some(app) = cell.borrow_mut().as_mut() {
+                        app.width = w.max(1);
+                        app.height = h.max(1);
+                    }
+                });
+                dispatch(UiEvent::Resize(w.max(1), h.max(1)));
+                InvalidateRect(hwnd, std::ptr::null(), 0);
+                0
+            }
+            WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP => {
+                let (x, y) = (lo(lp), hi(lp));
+                APP.with(|cell| {
+                    if let Some(app) = cell.borrow_mut().as_mut() {
+                        app.cursor = (x, y);
+                    }
+                });
+                dispatch(match msg {
+                    WM_LBUTTONDOWN => UiEvent::PointerDown(x, y),
+                    WM_LBUTTONUP => UiEvent::PointerUp(x, y),
+                    _ => UiEvent::PointerMove(x, y),
+                });
+                InvalidateRect(hwnd, std::ptr::null(), 0);
+                0
+            }
+            WM_MOUSEWHEEL => {
+                let delta = (((wp >> 16) & 0xFFFF) as i16) as f32 / 120.0;
+                let cursor = APP.with(|cell| {
+                    cell.borrow()
+                        .as_ref()
+                        .map(|a| a.cursor)
+                        .unwrap_or((0.0, 0.0))
+                });
+                dispatch(UiEvent::Wheel(cursor.0, cursor.1, -delta * 48.0));
+                InvalidateRect(hwnd, std::ptr::null(), 0);
+                0
+            }
+            WM_CHAR => {
+                let code = wp as u32;
+                let ev = match code {
+                    8 => Some(UiEvent::Backspace),
+                    13 => Some(UiEvent::Enter),
+                    _ => char::from_u32(code)
+                        .filter(|c| !c.is_control())
+                        .map(UiEvent::Char),
+                };
+                if let Some(ev) = ev {
+                    dispatch(ev);
+                    InvalidateRect(hwnd, std::ptr::null(), 0);
+                }
+                0
+            }
+            WM_PAINT => {
+                let mut ps: PaintStruct = std::mem::zeroed();
+                let hdc = BeginPaint(hwnd, &mut ps);
+                APP.with(|cell| {
+                    if let Some(app) = cell.borrow_mut().as_mut() {
+                        let b: &dyn Fn(&UiState) -> UxNode = &|s| build(&app.todos, s);
+                        let fb = render_ui(b, &app.ui, BG);
+                        let px = fb.to_u32(BG);
+                        let (w, h) = (app.width as i32, app.height as i32);
+                        let bmi = BitmapInfo {
+                            header: BitmapInfoHeader {
+                                size: std::mem::size_of::<BitmapInfoHeader>() as u32,
+                                width: w,
+                                height: -h, // top-down
+                                planes: 1,
+                                bit_count: 32,
+                                compression: BI_RGB,
+                                size_image: 0,
+                                x_ppm: 0,
+                                y_ppm: 0,
+                                clr_used: 0,
+                                clr_important: 0,
+                            },
+                            colors: [0],
+                        };
+                        StretchDIBits(
+                            hdc,
+                            0,
+                            0,
+                            w,
+                            h,
+                            0,
+                            0,
+                            w,
+                            h,
+                            px.as_ptr() as *const c_void,
+                            &bmi,
+                            DIB_RGB_COLORS,
+                            SRCCOPY,
+                        );
+                    }
+                });
+                EndPaint(hwnd, &ps);
+                0
+            }
+            _ => DefWindowProcW(hwnd, msg, wp, lp),
+        }
+    }
+
+    pub fn run() {
+        unsafe {
+            let class_name = wide("pmre_window");
+            let title = wide("pmre todo - pure math, zero dependencies");
+            let hinst = GetModuleHandleW(std::ptr::null());
+            let wc = WndClassW {
+                style: CS_HREDRAW | CS_VREDRAW,
+                proc_: Some(wndproc),
+                cls_extra: 0,
+                wnd_extra: 0,
+                instance: hinst,
+                icon: std::ptr::null_mut(),
+                cursor: LoadCursorW(std::ptr::null_mut(), IDC_ARROW as *const u16),
+                background: std::ptr::null_mut(),
+                menu_name: std::ptr::null(),
+                class_name: class_name.as_ptr(),
+            };
+            RegisterClassW(&wc);
+
+            APP.with(|cell| {
+                *cell.borrow_mut() = Some(App {
+                    width: 420,
+                    height: 560,
+                    ui: UiState::new(420, 560),
+                    cursor: (0.0, 0.0),
+                    todos: Vec::new(),
+                });
+            });
+
+            let hwnd = CreateWindowExW(
+                0,
+                class_name.as_ptr(),
+                title.as_ptr(),
+                WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                440,
+                620,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                hinst,
+                std::ptr::null_mut(),
+            );
+            if hwnd.is_null() {
+                eprintln!("CreateWindowExW failed");
+                return;
+            }
+            InvalidateRect(hwnd, std::ptr::null(), 0);
+
+            let mut msg: Msg = std::mem::zeroed();
+            while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+    }
 }

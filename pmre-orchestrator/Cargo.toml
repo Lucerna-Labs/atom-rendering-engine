@@ -1,6 +1,6 @@
 [package]
 name = "pmre-orchestrator"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 description = "The single orchestrator: all policy, no mechanism. Drives the kit."
@@ -16,8 +16,6 @@ path = "examples/demo.rs"
 name = "app"
 path = "examples/app.rs"
 
-# Only the live-window example needs OS windowing + CPU presentation.
-# The kit and the orchestrator library stay dependency-free pure math.
-[dev-dependencies]
-winit = "0.30"
-softbuffer = "0.4"
+# No dependencies anywhere. The live window (examples/app.rs) calls the OS windowing API
+# directly via raw FFI (user32/gdi32) instead of a wrapper crate, so the whole workspace —
+# library and examples — depends on zero external crates.
