@@ -13,6 +13,7 @@ pub mod geom;
 pub mod html;
 pub mod layout;
 pub mod paint;
+pub mod path;
 pub mod raster;
 pub mod text;
 pub mod ux;
@@ -20,6 +21,7 @@ pub mod ux;
 pub use framebuffer::Framebuffer;
 pub use geom::{Affine, Vec2};
 pub use paint::{Bounds, DrawCmd, Paint, Rgba, Shape};
+pub use path::PathCmd;
 pub use ux::{Align, Dim, Dir, Edges, Justify, Style, UxNode};
 
 /// The eight root atoms — the canonical vocabulary the whole kit specializes from.
