@@ -1,0 +1,6 @@
+# Rust build output
+/target
+
+# Generated render artifacts (examples write these to the workspace root)
+*.bmp
+/*.png

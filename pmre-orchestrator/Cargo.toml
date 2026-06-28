@@ -1,0 +1,22 @@
+[package]
+name = "pmre-orchestrator"
+version = "0.1.0"
+edition = "2021"
+description = "The single orchestrator: all policy, no mechanism. Drives the kit."
+
+[dependencies]
+pmre-kit = { path = "../pmre-kit" }
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
+
+[[example]]
+name = "app"
+path = "examples/app.rs"
+
+# Only the live-window example needs OS windowing + CPU presentation.
+# The kit and the orchestrator library stay dependency-free pure math.
+[dev-dependencies]
+winit = "0.30"
+softbuffer = "0.4"
