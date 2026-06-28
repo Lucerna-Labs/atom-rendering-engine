@@ -92,4 +92,12 @@ impl Framebuffer {
         }
         out
     }
+
+    /// Read the stored straight-alpha pixel at `(x, y)`; transparent if out of bounds.
+    pub fn pixel(&self, x: u32, y: u32) -> Rgba {
+        if x >= self.width || y >= self.height {
+            return Rgba::new(0.0, 0.0, 0.0, 0.0);
+        }
+        self.pixels[(y * self.width + x) as usize]
+    }
 }

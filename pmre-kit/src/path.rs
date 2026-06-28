@@ -181,3 +181,75 @@ fn add_span(cov: &mut [f32], x0: i32, x1: i32, xa: f32, xb: f32, weight: f32) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::framebuffer::Framebuffer;
+
+    #[test]
+    fn flatten_polygon_keeps_one_subpath() {
+        let tri = [
+            PathCmd::MoveTo(Vec2::new(0.0, 0.0)),
+            PathCmd::LineTo(Vec2::new(10.0, 0.0)),
+            PathCmd::LineTo(Vec2::new(0.0, 10.0)),
+            PathCmd::Close,
+        ];
+        let sp = flatten(&tri);
+        assert_eq!(sp.len(), 1);
+        assert!(sp[0].len() >= 3);
+    }
+
+    #[test]
+    fn flatten_cubic_emits_curve_samples() {
+        let p = [
+            PathCmd::MoveTo(Vec2::new(0.0, 0.0)),
+            PathCmd::Cubic(Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)),
+        ];
+        let sp = flatten(&p);
+        assert_eq!(sp.len(), 1);
+        assert_eq!(sp[0].len(), 1 + CURVE_STEPS); // start point + flattened samples
+    }
+
+    #[test]
+    fn fill_covers_interior_leaves_exterior() {
+        let bg = Rgba::new(0.0, 0.0, 0.0, 1.0);
+        let mut fb = Framebuffer::new(40, 40, bg);
+        let square = [
+            PathCmd::MoveTo(Vec2::new(10.0, 10.0)),
+            PathCmd::LineTo(Vec2::new(30.0, 10.0)),
+            PathCmd::LineTo(Vec2::new(30.0, 30.0)),
+            PathCmd::LineTo(Vec2::new(10.0, 30.0)),
+            PathCmd::Close,
+        ];
+        fill_cmds(&mut fb, &square, Rgba::new(1.0, 0.0, 0.0, 1.0), None);
+        let center = fb.pixel(20, 20);
+        assert!(center.r > 0.95 && center.g < 0.05, "interior should be solid fill, got {center:?}");
+        let outside = fb.pixel(2, 2);
+        assert!(outside.r < 0.05, "exterior should be untouched, got {outside:?}");
+    }
+
+    #[test]
+    fn opposite_winding_cuts_a_hole() {
+        let bg = Rgba::new(0.0, 0.0, 0.0, 1.0);
+        let mut fb = Framebuffer::new(60, 60, bg);
+        let ring = [
+            // outer contour
+            PathCmd::MoveTo(Vec2::new(10.0, 10.0)),
+            PathCmd::LineTo(Vec2::new(50.0, 10.0)),
+            PathCmd::LineTo(Vec2::new(50.0, 50.0)),
+            PathCmd::LineTo(Vec2::new(10.0, 50.0)),
+            PathCmd::Close,
+            // inner contour, wound the opposite way
+            PathCmd::MoveTo(Vec2::new(24.0, 24.0)),
+            PathCmd::LineTo(Vec2::new(24.0, 36.0)),
+            PathCmd::LineTo(Vec2::new(36.0, 36.0)),
+            PathCmd::LineTo(Vec2::new(36.0, 24.0)),
+            PathCmd::Close,
+        ];
+        fill_cmds(&mut fb, &ring, Rgba::new(0.2, 0.4, 1.0, 1.0), None);
+        assert!(fb.pixel(12, 30).b > 0.5, "ring band should be filled");
+        assert!(fb.pixel(30, 30).b < 0.2, "centre should be a hole");
+    }
+}
+
