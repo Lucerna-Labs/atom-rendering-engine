@@ -38,7 +38,11 @@ fn card(title: &str, accent: Rgba) -> UxNode {
             .border(1.0, Rgba::rgb8(58, 63, 78)),
         vec![
             UxNode::boxed(
-                Style::row().w(Dim::Px(46.0)).h(Dim::Px(46.0)).radius(10.0).bg(accent),
+                Style::row()
+                    .w(Dim::Px(46.0))
+                    .h(Dim::Px(46.0))
+                    .radius(10.0)
+                    .bg(accent),
                 vec![],
             ),
             text(title, 15.0, Rgba::rgb8(232, 236, 244)),

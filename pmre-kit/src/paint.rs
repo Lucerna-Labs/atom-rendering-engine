@@ -73,7 +73,9 @@ impl Shape {
     /// True when the shape has no area to rasterize (an unfilled generator slot).
     pub fn is_degenerate(&self) -> bool {
         match *self {
-            Shape::Rect { half } | Shape::RoundedRect { half, .. } => half.x <= 0.0 || half.y <= 0.0,
+            Shape::Rect { half } | Shape::RoundedRect { half, .. } => {
+                half.x <= 0.0 || half.y <= 0.0
+            }
             Shape::Circle { radius } => radius <= 0.0,
             Shape::Line { a, b, width } => width <= 0.0 || (a.x == b.x && a.y == b.y),
         }
@@ -86,9 +88,19 @@ impl Shape {
 pub enum Paint {
     Solid(Rgba),
     /// Linear gradient: `c0` at `from`, `c1` at `to`, clamped past the ends.
-    Linear { from: Vec2, to: Vec2, c0: Rgba, c1: Rgba },
+    Linear {
+        from: Vec2,
+        to: Vec2,
+        c0: Rgba,
+        c1: Rgba,
+    },
     /// Radial gradient: `c0` at `center`, `c1` at `radius`.
-    Radial { center: Vec2, radius: f32, c0: Rgba, c1: Rgba },
+    Radial {
+        center: Vec2,
+        radius: f32,
+        c0: Rgba,
+        c1: Rgba,
+    },
 }
 
 impl Paint {
@@ -101,7 +113,12 @@ impl Paint {
                 let t = ((p - from).dot(d) / d.dot(d).max(1e-6)).clamp(0.0, 1.0);
                 lerp_rgba(c0, c1, t)
             }
-            Paint::Radial { center, radius, c0, c1 } => {
+            Paint::Radial {
+                center,
+                radius,
+                c0,
+                c1,
+            } => {
                 let t = ((p - center).length() / radius.max(1e-6)).clamp(0.0, 1.0);
                 lerp_rgba(c0, c1, t)
             }

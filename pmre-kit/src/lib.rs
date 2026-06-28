@@ -63,7 +63,11 @@ pub mod atoms {
 
     /// `compare` — a distance over a pair (Euclidean).
     pub fn compare(a: &[f32], b: &[f32]) -> f32 {
-        a.iter().zip(b).map(|(x, y)| (x - y) * (x - y)).sum::<f32>().sqrt()
+        a.iter()
+            .zip(b)
+            .map(|(x, y)| (x - y) * (x - y))
+            .sum::<f32>()
+            .sqrt()
     }
 
     /// `combine` — a weighted sum of `(weight, signal)` terms.

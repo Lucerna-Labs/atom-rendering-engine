@@ -20,7 +20,11 @@ fn star(cx: f32, cy: f32, outer: f32, inner: f32, points: usize) -> Vec<PathCmd>
         let r = if i.is_multiple_of(2) { outer } else { inner };
         let a = -PI / 2.0 + i as f32 / n as f32 * TAU;
         let p = Vec2::new(cx + r * a.cos(), cy + r * a.sin());
-        v.push(if i == 0 { PathCmd::MoveTo(p) } else { PathCmd::LineTo(p) });
+        v.push(if i == 0 {
+            PathCmd::MoveTo(p)
+        } else {
+            PathCmd::LineTo(p)
+        });
     }
     v.push(PathCmd::Close);
     v
@@ -34,7 +38,10 @@ fn main() {
     scene.push(
         0.0,
         DrawCmd {
-            shape: Shape::RoundedRect { half: Vec2::new(150.0, 95.0), radius: 26.0 },
+            shape: Shape::RoundedRect {
+                half: Vec2::new(150.0, 95.0),
+                radius: 26.0,
+            },
             paint: Paint::Linear {
                 from: Vec2::new(-150.0, -95.0),
                 to: Vec2::new(150.0, 95.0),

@@ -14,8 +14,12 @@ use pmre_orchestrator::{handle_event, render_ui, widget_rect, UiEvent, UiState};
 const BG: Rgba = Rgba::new(0.078, 0.086, 0.110, 1.0);
 const PANEL: Rgba = Rgba::new(0.118, 0.129, 0.161, 1.0);
 
-fn white() -> Rgba { Rgba::rgb8(235, 239, 247) }
-fn muted() -> Rgba { Rgba::rgb8(150, 158, 174) }
+fn white() -> Rgba {
+    Rgba::rgb8(235, 239, 247)
+}
+fn muted() -> Rgba {
+    Rgba::rgb8(150, 158, 174)
+}
 
 // ids
 const TOG_DARK: u32 = 1;
@@ -47,9 +51,17 @@ fn button(s: &UiState, id: u32, label: &str, base: Rgba) -> UxNode {
 
 fn toggle(s: &UiState, id: u32) -> UxNode {
     let on = s.toggle_on(id);
-    let track = if on { Rgba::rgb8(52, 199, 130) } else { Rgba::rgb8(70, 74, 90) };
+    let track = if on {
+        Rgba::rgb8(52, 199, 130)
+    } else {
+        Rgba::rgb8(70, 74, 90)
+    };
     let knob = UxNode::boxed(
-        Style::col().w(Dim::Px(22.0)).h(Dim::Px(22.0)).radius(11.0).bg(white()),
+        Style::col()
+            .w(Dim::Px(22.0))
+            .h(Dim::Px(22.0))
+            .radius(11.0)
+            .bg(white()),
         vec![],
     );
     UxNode::boxed(
@@ -75,7 +87,11 @@ fn row(i: u32) -> UxNode {
             .bg(Rgba::rgb8(shade, shade + 3, shade + 10))
             .align(Align::Center)
             .pad(Edges::xy(12.0, 0.0)),
-        vec![UxNode::text(format!("ITEM {i:02} - SCROLLABLE ROW CONTENT"), 13.0, muted())],
+        vec![UxNode::text(
+            format!("ITEM {i:02} - SCROLLABLE ROW CONTENT"),
+            13.0,
+            muted(),
+        )],
     )
 }
 

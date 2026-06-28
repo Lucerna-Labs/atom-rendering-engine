@@ -10,8 +10,16 @@ use crate::ux::{Align, Dim, Dir, Edges, Justify, Role, Style, UxNode};
 /// What a laid-out box paints as.
 #[derive(Clone, Debug)]
 pub enum Painted {
-    Box { background: Option<Rgba>, radius: f32, border: Option<(f32, Rgba)> },
-    Text { content: String, size: f32, color: Rgba },
+    Box {
+        background: Option<Rgba>,
+        radius: f32,
+        border: Option<(f32, Rgba)>,
+    },
+    Text {
+        content: String,
+        size: f32,
+        color: Rgba,
+    },
 }
 
 /// A node with its solved device-space rectangle and interaction metadata.
@@ -149,12 +157,26 @@ fn measure(node: &UxNode, avail_w: Option<f32>) -> (f32, f32) {
     }
 }
 
-fn layout_node(node: &UxNode, rect: Bounds, clip: Option<Bounds>, scroll: &ScrollFn, out: &mut Vec<LaidBox>) {
+fn layout_node(
+    node: &UxNode,
+    rect: Bounds,
+    clip: Option<Bounds>,
+    scroll: &ScrollFn,
+    out: &mut Vec<LaidBox>,
+) {
     match node {
-        UxNode::Text { content, size, color } => {
+        UxNode::Text {
+            content,
+            size,
+            color,
+        } => {
             out.push(LaidBox {
                 rect,
-                kind: Painted::Text { content: content.clone(), size: *size, color: *color },
+                kind: Painted::Text {
+                    content: content.clone(),
+                    size: *size,
+                    color: *color,
+                },
                 id: None,
                 role: Role::None,
                 clip,
@@ -170,7 +192,11 @@ fn layout_node(node: &UxNode, rect: Bounds, clip: Option<Bounds>, scroll: &Scrol
                 let content_len = scroll_content_height(children, cw, style.gap);
                 out.push(LaidBox {
                     rect,
-                    kind: Painted::Box { background: style.background, radius: style.radius, border: style.border },
+                    kind: Painted::Box {
+                        background: style.background,
+                        radius: style.radius,
+                        border: style.border,
+                    },
                     id: style.id,
                     role: style.role,
                     clip,
@@ -191,7 +217,11 @@ fn layout_node(node: &UxNode, rect: Bounds, clip: Option<Bounds>, scroll: &Scrol
             } else {
                 out.push(LaidBox {
                     rect,
-                    kind: Painted::Box { background: style.background, radius: style.radius, border: style.border },
+                    kind: Painted::Box {
+                        background: style.background,
+                        radius: style.radius,
+                        border: style.border,
+                    },
                     id: style.id,
                     role: style.role,
                     clip,
@@ -215,7 +245,14 @@ fn scroll_content_height(children: &[UxNode], width: f32, gap: f32) -> f32 {
     h
 }
 
-fn layout_children(style: &Style, children: &[UxNode], content: Bounds, clip: Option<Bounds>, scroll: &ScrollFn, out: &mut Vec<LaidBox>) {
+fn layout_children(
+    style: &Style,
+    children: &[UxNode],
+    content: Bounds,
+    clip: Option<Bounds>,
+    scroll: &ScrollFn,
+    out: &mut Vec<LaidBox>,
+) {
     let n = children.len();
     if n == 0 {
         return;
@@ -228,7 +265,11 @@ fn layout_children(style: &Style, children: &[UxNode], content: Bounds, clip: Op
     } else {
         (content.min.y, content.min.x)
     };
-    let avail_for_child = if main_is_width { None } else { Some(cross_extent) };
+    let avail_for_child = if main_is_width {
+        None
+    } else {
+        Some(cross_extent)
+    };
 
     let mut bases = Vec::with_capacity(n);
     let mut weights = Vec::with_capacity(n);
@@ -280,9 +321,15 @@ fn layout_children(style: &Style, children: &[UxNode], content: Bounds, clip: Op
         };
         let cross_pos = align_pos(style.align, cross_start, cross_extent, cc);
         let rect = if main_is_width {
-            Bounds { min: Vec2::new(cursor, cross_pos), max: Vec2::new(cursor + cm, cross_pos + cc) }
+            Bounds {
+                min: Vec2::new(cursor, cross_pos),
+                max: Vec2::new(cursor + cm, cross_pos + cc),
+            }
         } else {
-            Bounds { min: Vec2::new(cross_pos, cursor), max: Vec2::new(cross_pos + cc, cursor + cm) }
+            Bounds {
+                min: Vec2::new(cross_pos, cursor),
+                max: Vec2::new(cross_pos + cc, cursor + cm),
+            }
         };
         layout_node(ch, rect, clip, scroll, out);
         cursor += cm + style.gap + between_extra;
@@ -326,7 +373,12 @@ pub fn cmds_for(b: &LaidBox, out: &mut Vec<DrawCmd>) {
         return;
     }
     let at = Affine::translate(center.x, center.y);
-    if let Painted::Box { background, radius, border } = &b.kind {
+    if let Painted::Box {
+        background,
+        radius,
+        border,
+    } = &b.kind
+    {
         let r = radius.min(half.x).min(half.y).max(0.0);
         match border {
             Some((bw, bc)) => {
@@ -338,7 +390,10 @@ pub fn cmds_for(b: &LaidBox, out: &mut Vec<DrawCmd>) {
                 if let Some(bg) = background {
                     let inner = Vec2::new((half.x - bw).max(0.0), (half.y - bw).max(0.0));
                     out.push(DrawCmd {
-                        shape: Shape::RoundedRect { half: inner, radius: (r - bw).max(0.0) },
+                        shape: Shape::RoundedRect {
+                            half: inner,
+                            radius: (r - bw).max(0.0),
+                        },
                         paint: Paint::Solid(*bg),
                         transform: at,
                     });

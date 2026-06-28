@@ -10,12 +10,20 @@ use crate::ux::{Align, Dim, Dir, Edges, Justify, Style, UxNode};
 // ---- DOM ----
 
 enum Dom {
-    Elem { tag: String, style_attr: Option<String>, kids: Vec<Dom> },
+    Elem {
+        tag: String,
+        style_attr: Option<String>,
+        kids: Vec<Dom>,
+    },
     Text(String),
 }
 
 enum Tok {
-    Open { tag: String, style_attr: Option<String>, self_close: bool },
+    Open {
+        tag: String,
+        style_attr: Option<String>,
+        self_close: bool,
+    },
     Close(String),
     Text(String),
 }
@@ -32,12 +40,18 @@ pub fn parse(src: &str) -> UxNode {
     let toks = tokenize(src);
     let mut pos = 0usize;
     let roots = parse_nodes(&toks, &mut pos, None);
-    let inherited = Inherited { color: Rgba::rgb8(228, 232, 240), font_size: 14.0 };
+    let inherited = Inherited {
+        color: Rgba::rgb8(228, 232, 240),
+        font_size: 14.0,
+    };
     let kids: Vec<UxNode> = roots.iter().map(|d| to_ux(d, inherited)).collect();
     if kids.len() == 1 {
         kids.into_iter().next().unwrap()
     } else {
-        UxNode::Box { style: Style::col(), children: kids }
+        UxNode::Box {
+            style: Style::col(),
+            children: kids,
+        }
     }
 }
 
@@ -80,7 +94,11 @@ fn tokenize(src: &str) -> Vec<Tok> {
                 let inner = inner.trim_end_matches('/').trim();
                 let (tag, style_attr) = parse_open(inner);
                 let self_close = self_close || is_void(&tag);
-                out.push(Tok::Open { tag, style_attr, self_close });
+                out.push(Tok::Open {
+                    tag,
+                    style_attr,
+                    self_close,
+                });
             }
             i = j + 1;
         } else {
@@ -140,7 +158,11 @@ fn parse_nodes(toks: &[Tok], pos: &mut usize, stop: Option<&str>) -> Vec<Dom> {
                 nodes.push(Dom::Text(t.clone()));
                 *pos += 1;
             }
-            Tok::Open { tag, style_attr, self_close } => {
+            Tok::Open {
+                tag,
+                style_attr,
+                self_close,
+            } => {
                 let tag = tag.clone();
                 let style_attr = style_attr.clone();
                 let self_close = *self_close;
@@ -150,7 +172,11 @@ fn parse_nodes(toks: &[Tok], pos: &mut usize, stop: Option<&str>) -> Vec<Dom> {
                 } else {
                     parse_nodes(toks, pos, Some(&tag))
                 };
-                nodes.push(Dom::Elem { tag, style_attr, kids });
+                nodes.push(Dom::Elem {
+                    tag,
+                    style_attr,
+                    kids,
+                });
             }
         }
     }
@@ -171,15 +197,26 @@ fn tag_font(tag: &str, base: f32) -> f32 {
 
 fn to_ux(dom: &Dom, inh: Inherited) -> UxNode {
     match dom {
-        Dom::Text(t) => UxNode::Text { content: t.clone(), size: inh.font_size, color: inh.color },
-        Dom::Elem { tag, style_attr, kids } => {
+        Dom::Text(t) => UxNode::Text {
+            content: t.clone(),
+            size: inh.font_size,
+            color: inh.color,
+        },
+        Dom::Elem {
+            tag,
+            style_attr,
+            kids,
+        } => {
             let mut style = Style::col();
             let mut color = inh.color;
             let mut font = tag_font(tag, inh.font_size);
             if let Some(css) = style_attr {
                 apply_css(&mut style, &mut color, &mut font, css);
             }
-            let child_inh = Inherited { color, font_size: font };
+            let child_inh = Inherited {
+                color,
+                font_size: font,
+            };
             let children = kids.iter().map(|k| to_ux(k, child_inh)).collect();
             UxNode::Box { style, children }
         }
@@ -202,7 +239,11 @@ fn apply_css(style: &mut Style, color: &mut Rgba, font: &mut f32, css: &str) {
                 style.dir = if val == "row" { Dir::Row } else { Dir::Column };
             }
             "flex" | "flex-grow" => {
-                let n = val.split_whitespace().next().and_then(parse_f32).unwrap_or(1.0);
+                let n = val
+                    .split_whitespace()
+                    .next()
+                    .and_then(parse_f32)
+                    .unwrap_or(1.0);
                 style.width = Dim::Flex(n);
                 style.height = Dim::Flex(n);
             }

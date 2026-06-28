@@ -13,7 +13,10 @@ fn main() {
     scene.push(
         0.0,
         DrawCmd {
-            shape: Shape::RoundedRect { half: Vec2::new(150.0, 90.0), radius: 28.0 },
+            shape: Shape::RoundedRect {
+                half: Vec2::new(150.0, 90.0),
+                radius: 28.0,
+            },
             paint: Paint::Solid(Rgba::rgb8(60, 120, 220)),
             transform: Affine::translate(230.0, 180.0),
         },
@@ -33,7 +36,11 @@ fn main() {
     scene.push(
         2.0,
         DrawCmd {
-            shape: Shape::Line { a: Vec2::new(-160.0, 0.0), b: Vec2::new(160.0, 0.0), width: 10.0 },
+            shape: Shape::Line {
+                a: Vec2::new(-160.0, 0.0),
+                b: Vec2::new(160.0, 0.0),
+                width: 10.0,
+            },
             paint: Paint::Solid(Rgba::rgb8(245, 210, 90)),
             transform: Affine::translate(320.0, 285.0),
         },

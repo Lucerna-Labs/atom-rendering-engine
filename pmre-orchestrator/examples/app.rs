@@ -59,8 +59,19 @@ fn button(s: &UiState, id: u32, label: &str, base: Rgba) -> UxNode {
 
 fn toggle(s: &UiState, id: u32) -> UxNode {
     let on = s.toggle_on(id);
-    let track = if on { Rgba::rgb8(52, 199, 130) } else { Rgba::rgb8(70, 74, 90) };
-    let knob = UxNode::boxed(Style::col().w(Dim::Px(22.0)).h(Dim::Px(22.0)).radius(11.0).bg(white()), vec![]);
+    let track = if on {
+        Rgba::rgb8(52, 199, 130)
+    } else {
+        Rgba::rgb8(70, 74, 90)
+    };
+    let knob = UxNode::boxed(
+        Style::col()
+            .w(Dim::Px(22.0))
+            .h(Dim::Px(22.0))
+            .radius(11.0)
+            .bg(white()),
+        vec![],
+    );
     UxNode::boxed(
         Style::row()
             .toggle(id)
@@ -84,14 +95,23 @@ fn row(i: u32) -> UxNode {
             .bg(Rgba::rgb8(shade, shade + 3, shade + 10))
             .align(Align::Center)
             .pad(Edges::xy(12.0, 0.0)),
-        vec![UxNode::text(format!("ITEM {i:02} - CLICK A TOGGLE, DRAG NOTHING, SCROLL ME"), 13.0, muted())],
+        vec![UxNode::text(
+            format!("ITEM {i:02} - CLICK A TOGGLE, DRAG NOTHING, SCROLL ME"),
+            13.0,
+            muted(),
+        )],
     )
 }
 
 fn build(s: &UiState) -> UxNode {
     let spacer = UxNode::boxed(Style::row().w(Dim::Flex(1.0)).h(Dim::Px(1.0)), vec![]);
     let header = UxNode::boxed(
-        Style::row().h(Dim::Px(56.0)).bg(PANEL).align(Align::Center).pad(Edges::xy(18.0, 0.0)).gap(14.0),
+        Style::row()
+            .h(Dim::Px(56.0))
+            .bg(PANEL)
+            .align(Align::Center)
+            .pad(Edges::xy(18.0, 0.0))
+            .gap(14.0),
         vec![
             UxNode::text("CONTROLS", 18.0, white()),
             spacer,
@@ -100,7 +120,12 @@ fn build(s: &UiState) -> UxNode {
         ],
     );
     let sidebar = UxNode::boxed(
-        Style::col().w(Dim::Px(190.0)).h(Dim::Flex(1.0)).bg(PANEL).pad(Edges::all(16.0)).gap(12.0),
+        Style::col()
+            .w(Dim::Px(190.0))
+            .h(Dim::Flex(1.0))
+            .bg(PANEL)
+            .pad(Edges::all(16.0))
+            .gap(12.0),
         vec![
             UxNode::text("ACTIONS", 12.0, muted()),
             button(s, BTN_SAVE, "SAVE", Rgba::rgb8(48, 110, 210)),
@@ -113,11 +138,23 @@ fn build(s: &UiState) -> UxNode {
         ],
     );
     let list = UxNode::boxed(
-        Style::col().scroll(LIST).w(Dim::Flex(1.0)).h(Dim::Flex(1.0)).bg(Rgba::rgb8(24, 26, 33)).pad(Edges::all(12.0)).gap(8.0),
+        Style::col()
+            .scroll(LIST)
+            .w(Dim::Flex(1.0))
+            .h(Dim::Flex(1.0))
+            .bg(Rgba::rgb8(24, 26, 33))
+            .pad(Edges::all(12.0))
+            .gap(8.0),
         (0..20).map(row).collect(),
     );
-    let body = UxNode::boxed(Style::row().w(Dim::Flex(1.0)).h(Dim::Flex(1.0)), vec![sidebar, list]);
-    UxNode::boxed(Style::col().w(Dim::Flex(1.0)).h(Dim::Flex(1.0)).bg(BG), vec![header, body])
+    let body = UxNode::boxed(
+        Style::row().w(Dim::Flex(1.0)).h(Dim::Flex(1.0)),
+        vec![sidebar, list],
+    );
+    UxNode::boxed(
+        Style::col().w(Dim::Flex(1.0)).h(Dim::Flex(1.0)).bg(BG),
+        vec![header, body],
+    )
 }
 
 #[derive(Default)]
@@ -165,7 +202,8 @@ impl ApplicationHandler for App {
             .with_inner_size(LogicalSize::new(960.0, 620.0));
         let window = Rc::new(el.create_window(attrs).expect("create window"));
         let context = softbuffer::Context::new(window.clone()).expect("softbuffer context");
-        let surface = softbuffer::Surface::new(&context, window.clone()).expect("softbuffer surface");
+        let surface =
+            softbuffer::Surface::new(&context, window.clone()).expect("softbuffer surface");
         let size = window.inner_size();
         self.state = UiState::new(size.width.max(1), size.height.max(1));
         self.window = Some(window.clone());
@@ -179,15 +217,27 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => el.exit(),
             WindowEvent::Resized(sz) => {
-                handle_event(&mut self.state, build_ref, UiEvent::Resize(sz.width.max(1), sz.height.max(1)));
+                handle_event(
+                    &mut self.state,
+                    build_ref,
+                    UiEvent::Resize(sz.width.max(1), sz.height.max(1)),
+                );
                 self.redraw();
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x as f32, position.y as f32);
-                handle_event(&mut self.state, build_ref, UiEvent::PointerMove(self.cursor.0, self.cursor.1));
+                handle_event(
+                    &mut self.state,
+                    build_ref,
+                    UiEvent::PointerMove(self.cursor.0, self.cursor.1),
+                );
                 self.redraw();
             }
-            WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
+            WindowEvent::MouseInput {
+                state,
+                button: MouseButton::Left,
+                ..
+            } => {
                 let (x, y) = self.cursor;
                 let ev = if state == ElementState::Pressed {
                     UiEvent::PointerDown(x, y)

@@ -44,7 +44,14 @@ pub fn wrap(content: &str, size: f32, max_width: f32) -> Vec<String> {
 
 /// Render `content` with its top-left at `origin`; the 7-row glyph spans `size` pixels tall.
 /// Pixels outside `clip` (when given) are skipped.
-pub fn draw(fb: &mut Framebuffer, content: &str, origin: Vec2, size: f32, color: Rgba, clip: Option<Bounds>) {
+pub fn draw(
+    fb: &mut Framebuffer,
+    content: &str,
+    origin: Vec2,
+    size: f32,
+    color: Rgba,
+    clip: Option<Bounds>,
+) {
     let cs = (size / 7.0).max(1.0);
     let mut pen_x = origin.x;
     for ch in content.chars() {
@@ -52,7 +59,14 @@ pub fn draw(fb: &mut Framebuffer, content: &str, origin: Vec2, size: f32, color:
         for (r, &row) in g.iter().enumerate() {
             for col in 0..5u32 {
                 if row & (1 << (4 - col)) != 0 {
-                    fill_cell(fb, pen_x + col as f32 * cs, origin.y + r as f32 * cs, cs, color, clip);
+                    fill_cell(
+                        fb,
+                        pen_x + col as f32 * cs,
+                        origin.y + r as f32 * cs,
+                        cs,
+                        color,
+                        clip,
+                    );
                 }
             }
         }

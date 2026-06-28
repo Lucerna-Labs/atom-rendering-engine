@@ -56,14 +56,35 @@ pub struct Affine {
 }
 
 impl Affine {
-    pub const IDENTITY: Affine = Affine { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: 0.0, f: 0.0 };
+    pub const IDENTITY: Affine = Affine {
+        a: 1.0,
+        b: 0.0,
+        c: 0.0,
+        d: 1.0,
+        e: 0.0,
+        f: 0.0,
+    };
 
     pub fn translate(x: f32, y: f32) -> Affine {
-        Affine { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: x, f: y }
+        Affine {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: x,
+            f: y,
+        }
     }
 
     pub fn scale(s: f32) -> Affine {
-        Affine { a: s, b: 0.0, c: 0.0, d: s, e: 0.0, f: 0.0 }
+        Affine {
+            a: s,
+            b: 0.0,
+            c: 0.0,
+            d: s,
+            e: 0.0,
+            f: 0.0,
+        }
     }
 
     /// Compose: apply `self` first, then `next`.
@@ -80,7 +101,10 @@ impl Affine {
 
     /// The `project` atom: transform a point through the matrix.
     pub fn apply(self, p: Vec2) -> Vec2 {
-        Vec2::new(self.a * p.x + self.c * p.y + self.e, self.b * p.x + self.d * p.y + self.f)
+        Vec2::new(
+            self.a * p.x + self.c * p.y + self.e,
+            self.b * p.x + self.d * p.y + self.f,
+        )
     }
 
     pub fn determinant(self) -> f32 {
@@ -93,7 +117,14 @@ impl Affine {
         let b = -self.b * inv;
         let c = -self.c * inv;
         let d = self.a * inv;
-        Affine { a, b, c, d, e: -(a * self.e + c * self.f), f: -(b * self.e + d * self.f) }
+        Affine {
+            a,
+            b,
+            c,
+            d,
+            e: -(a * self.e + c * self.f),
+            f: -(b * self.e + d * self.f),
+        }
     }
 
     /// Average linear scale (exact for similarity transforms); used to size the AA band.

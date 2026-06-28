@@ -39,7 +39,12 @@ pub struct Scene {
 
 impl Scene {
     pub fn new(width: u32, height: u32, clear: Rgba) -> Self {
-        Self { width, height, clear, items: Vec::new() }
+        Self {
+            width,
+            height,
+            clear,
+            items: Vec::new(),
+        }
     }
     pub fn push(&mut self, z: f32, cmd: DrawCmd) {
         self.items.push(Item { z, cmd });
@@ -76,7 +81,11 @@ fn paint_boxes(fb: &mut Framebuffer, boxes: &[LaidBox]) {
                     }
                 }
             }
-            Painted::Text { content, size, color } => {
+            Painted::Text {
+                content,
+                size,
+                color,
+            } => {
                 let max_w = laid.rect.max.x - laid.rect.min.x;
                 let line_h = *size * 1.3;
                 let mut y = laid.rect.min.y;
@@ -91,7 +100,10 @@ fn paint_boxes(fb: &mut Framebuffer, boxes: &[LaidBox]) {
 }
 
 fn viewport(w: u32, h: u32) -> Bounds {
-    Bounds { min: Vec2::new(0.0, 0.0), max: Vec2::new(w as f32, h as f32) }
+    Bounds {
+        min: Vec2::new(0.0, 0.0),
+        max: Vec2::new(w as f32, h as f32),
+    }
 }
 
 /// Render a UXI tree (no interaction). Reduced layout → identical raster path.
@@ -122,11 +134,17 @@ pub struct UiState {
     pub clicked: Option<u32>,
     pub toggles: HashMap<u32, bool>,
     pub scrolls: HashMap<u32, f32>,
+    /// Scroll region whose scrollbar thumb is currently being dragged.
+    pub drag: Option<u32>,
 }
 
 impl UiState {
     pub fn new(width: u32, height: u32) -> Self {
-        Self { width, height, ..Self::default() }
+        Self {
+            width,
+            height,
+            ..Self::default()
+        }
     }
     pub fn is_hover(&self, id: u32) -> bool {
         self.hover == Some(id)
@@ -158,17 +176,42 @@ pub enum UiEvent {
 
 fn solve_for(build: &dyn Fn(&UiState) -> UxNode, state: &UiState) -> Vec<LaidBox> {
     let tree = build(state);
-    layout::solve(&tree, viewport(state.width, state.height), &|id| state.scroll_of(id))
+    layout::solve(&tree, viewport(state.width, state.height), &|id| {
+        state.scroll_of(id)
+    })
 }
 
 fn rect_contains(b: Bounds, x: f32, y: f32) -> bool {
     x >= b.min.x && x < b.max.x && y >= b.min.y && y < b.max.y
 }
 
+/// Scrollbar track + thumb geometry for a scroll region: `(bar_x, track_top, track_h,
+/// thumb_y, thumb_h, max_scroll)`. `None` when there is nothing to scroll.
+fn scrollbar_geom(b: &LaidBox, scroll: f32) -> Option<(f32, f32, f32, f32, f32, f32)> {
+    if b.role != Role::Scroll {
+        return None;
+    }
+    let view_h = b.rect.max.y - b.rect.min.y;
+    let max = (b.content_len - view_h).max(0.0);
+    if max <= 0.0 {
+        return None;
+    }
+    let track_top = b.rect.min.y + 4.0;
+    let track_h = (view_h - 8.0).max(1.0);
+    let bar_x = b.rect.max.x - 7.0;
+    let thumb_h = (view_h / b.content_len * track_h).clamp(24.0, track_h);
+    let t = (scroll / max).clamp(0.0, 1.0);
+    let thumb_y = track_top + t * (track_h - thumb_h);
+    Some((bar_x, track_top, track_h, thumb_y, thumb_h, max))
+}
+
 /// The solved rectangle of the box with the given id under the current state.
 /// Useful for placing synthetic events and for tests.
 pub fn widget_rect(build: &dyn Fn(&UiState) -> UxNode, state: &UiState, id: u32) -> Option<Bounds> {
-    solve_for(build, state).into_iter().find(|b| b.id == Some(id)).map(|b| b.rect)
+    solve_for(build, state)
+        .into_iter()
+        .find(|b| b.id == Some(id))
+        .map(|b| b.rect)
 }
 
 /// Advance the interaction state machine by one event. `build` produces the current tree.
@@ -179,17 +222,56 @@ pub fn handle_event(state: &mut UiState, build: &dyn Fn(&UiState) -> UxNode, ev:
             state.height = h;
         }
         UiEvent::PointerMove(x, y) => {
+            if let Some(id) = state.drag {
+                let boxes = solve_for(build, state);
+                if let Some(b) = boxes.iter().find(|b| b.id == Some(id)) {
+                    if let Some((_bx, track_top, track_h, _ty, thumb_h, max)) =
+                        scrollbar_geom(b, state.scroll_of(id))
+                    {
+                        let denom = (track_h - thumb_h).max(1e-3);
+                        let t = ((y - track_top - thumb_h * 0.5) / denom).clamp(0.0, 1.0);
+                        state.scrolls.insert(id, t * max);
+                    }
+                }
+                return;
+            }
             let boxes = solve_for(build, state);
             state.hover = layout::hit_test(&boxes, x, y).map(|(id, _)| id);
         }
         UiEvent::PointerDown(x, y) => {
             let boxes = solve_for(build, state);
-            state.pressed = layout::hit_test(&boxes, x, y).map(|(id, _)| id);
+            state.drag = None;
+            for b in &boxes {
+                let Some(id) = b.id else { continue };
+                if let Some((bar_x, _tt, _th, thumb_y, thumb_h, _max)) =
+                    scrollbar_geom(b, state.scroll_of(id))
+                {
+                    if x >= bar_x - 4.0
+                        && x <= bar_x + 8.0
+                        && y >= thumb_y
+                        && y <= thumb_y + thumb_h
+                    {
+                        state.drag = Some(id);
+                    }
+                }
+            }
+            if state.drag.is_some() {
+                state.pressed = None;
+            } else {
+                state.pressed = layout::hit_test(&boxes, x, y).map(|(id, _)| id);
+            }
         }
         UiEvent::PointerUp(x, y) => {
+            if state.drag.is_some() {
+                state.drag = None;
+                state.pressed = None;
+                return;
+            }
             let boxes = solve_for(build, state);
             state.clicked = None;
-            if let (Some((up_id, role)), Some(pressed)) = (layout::hit_test(&boxes, x, y), state.pressed) {
+            if let (Some((up_id, role)), Some(pressed)) =
+                (layout::hit_test(&boxes, x, y), state.pressed)
+            {
                 if up_id == pressed {
                     state.clicked = Some(up_id);
                     if role == Role::Toggle {
@@ -231,30 +313,35 @@ pub fn render_ui(build: &dyn Fn(&UiState) -> UxNode, state: &UiState, clear: Rgb
 
 fn draw_scrollbars(fb: &mut Framebuffer, boxes: &[LaidBox], state: &UiState) {
     for b in boxes {
-        if b.role != Role::Scroll {
-            continue;
-        }
         let Some(id) = b.id else { continue };
-        let view_h = b.rect.max.y - b.rect.min.y;
-        let max = (b.content_len - view_h).max(0.0);
-        if max <= 0.0 {
-            continue; // nothing to scroll, no bar
+        if let Some((bar_x, track_top, track_h, thumb_y, thumb_h, _max)) =
+            scrollbar_geom(b, state.scroll_of(id))
+        {
+            let thumb_col = if state.drag == Some(id) {
+                Rgba::rgb8(150, 160, 185)
+            } else {
+                Rgba::rgb8(120, 130, 150)
+            };
+            fill_rect(
+                fb,
+                bar_x,
+                track_top,
+                4.0,
+                track_h,
+                Rgba::rgb8(48, 52, 64),
+                2.0,
+            );
+            fill_rect(fb, bar_x, thumb_y, 4.0, thumb_h, thumb_col, 2.0);
         }
-        let track_top = b.rect.min.y + 4.0;
-        let track_h = (view_h - 8.0).max(1.0);
-        let bar_x = b.rect.max.x - 7.0;
-        let thumb_h = (view_h / b.content_len * track_h).clamp(24.0, track_h);
-        let t = (state.scroll_of(id) / max).clamp(0.0, 1.0);
-        let thumb_y = track_top + t * (track_h - thumb_h);
-
-        fill_rect(fb, bar_x, track_top, 4.0, track_h, Rgba::rgb8(48, 52, 64), 2.0);
-        fill_rect(fb, bar_x, thumb_y, 4.0, thumb_h, Rgba::rgb8(120, 130, 150), 2.0);
     }
 }
 
 fn fill_rect(fb: &mut Framebuffer, x: f32, y: f32, w: f32, h: f32, color: Rgba, radius: f32) {
     let cmd = DrawCmd {
-        shape: Shape::RoundedRect { half: Vec2::new(w / 2.0, h / 2.0), radius },
+        shape: Shape::RoundedRect {
+            half: Vec2::new(w / 2.0, h / 2.0),
+            radius,
+        },
         paint: Paint::Solid(color),
         transform: Affine::translate(x + w / 2.0, y + h / 2.0),
     };

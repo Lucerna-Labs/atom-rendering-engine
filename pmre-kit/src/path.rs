@@ -6,6 +6,8 @@
 //! cut holes. Mechanism only: it fills the points it is given; the orchestrator decides what
 //! and where.
 
+use std::f32::consts::TAU;
+
 use crate::framebuffer::Framebuffer;
 use crate::geom::Vec2;
 use crate::paint::{Bounds, Paint};
@@ -183,6 +185,67 @@ fn add_span(cov: &mut [f32], x0: i32, x1: i32, xa: f32, xb: f32, weight: f32) {
     }
 }
 
+/// Stroke polylines `width` thick with round joins and caps. Built as a union of segment
+/// quads and vertex discs, all wound the same way so nonzero winding merges them cleanly.
+pub fn stroke(
+    fb: &mut Framebuffer,
+    subpaths: &[Vec<Vec2>],
+    width: f32,
+    paint: Paint,
+    clip: Option<Bounds>,
+    closed: bool,
+) {
+    let hw = width * 0.5;
+    if hw <= 0.0 {
+        return;
+    }
+    let mut pieces: Vec<Vec<Vec2>> = Vec::new();
+    for sp in subpaths {
+        let n = sp.len();
+        if n < 2 {
+            continue;
+        }
+        let segs = if closed { n } else { n - 1 };
+        for i in 0..segs {
+            let a = sp[i];
+            let b = sp[(i + 1) % n];
+            let d = b - a;
+            let len = d.length();
+            if len < 1e-6 {
+                continue;
+            }
+            let dir = d.scale(1.0 / len);
+            let nrm = Vec2::new(-dir.y, dir.x).scale(hw);
+            pieces.push(vec![a + nrm, a - nrm, b - nrm, b + nrm]);
+            pieces.push(disc(b, hw)); // round join / end cap
+        }
+        pieces.push(disc(sp[0], hw)); // round start cap / join
+    }
+    fill(fb, &pieces, paint, clip);
+}
+
+/// Flatten and stroke a command list. `closed` joins the last point back to the first.
+pub fn stroke_cmds(
+    fb: &mut Framebuffer,
+    cmds: &[PathCmd],
+    width: f32,
+    paint: Paint,
+    clip: Option<Bounds>,
+    closed: bool,
+) {
+    stroke(fb, &flatten(cmds), width, paint, clip, closed);
+}
+
+fn disc(c: Vec2, r: f32) -> Vec<Vec2> {
+    let n = 16;
+    (0..n)
+        .map(|k| {
+            let a = k as f32 / n as f32 * TAU;
+            c + Vec2::new(r * a.cos(), r * a.sin())
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,7 +269,11 @@ mod tests {
     fn flatten_cubic_emits_curve_samples() {
         let p = [
             PathCmd::MoveTo(Vec2::new(0.0, 0.0)),
-            PathCmd::Cubic(Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)),
+            PathCmd::Cubic(
+                Vec2::new(10.0, 0.0),
+                Vec2::new(10.0, 10.0),
+                Vec2::new(0.0, 10.0),
+            ),
         ];
         let sp = flatten(&p);
         assert_eq!(sp.len(), 1);
@@ -224,11 +291,22 @@ mod tests {
             PathCmd::LineTo(Vec2::new(10.0, 30.0)),
             PathCmd::Close,
         ];
-        fill_cmds(&mut fb, &square, Paint::Solid(Rgba::new(1.0, 0.0, 0.0, 1.0)), None);
+        fill_cmds(
+            &mut fb,
+            &square,
+            Paint::Solid(Rgba::new(1.0, 0.0, 0.0, 1.0)),
+            None,
+        );
         let center = fb.pixel(20, 20);
-        assert!(center.r > 0.95 && center.g < 0.05, "interior should be solid fill, got {center:?}");
+        assert!(
+            center.r > 0.95 && center.g < 0.05,
+            "interior should be solid fill, got {center:?}"
+        );
         let outside = fb.pixel(2, 2);
-        assert!(outside.r < 0.05, "exterior should be untouched, got {outside:?}");
+        assert!(
+            outside.r < 0.05,
+            "exterior should be untouched, got {outside:?}"
+        );
     }
 
     #[test]
@@ -249,7 +327,12 @@ mod tests {
             PathCmd::LineTo(Vec2::new(36.0, 24.0)),
             PathCmd::Close,
         ];
-        fill_cmds(&mut fb, &ring, Paint::Solid(Rgba::new(0.2, 0.4, 1.0, 1.0)), None);
+        fill_cmds(
+            &mut fb,
+            &ring,
+            Paint::Solid(Rgba::new(0.2, 0.4, 1.0, 1.0)),
+            None,
+        );
         assert!(fb.pixel(12, 30).b > 0.5, "ring band should be filled");
         assert!(fb.pixel(30, 30).b < 0.2, "centre should be a hole");
     }
@@ -264,7 +347,32 @@ mod tests {
         };
         assert!(g.sample(Vec2::new(0.0, 0.0)).r < 0.01, "start is c0");
         assert!(g.sample(Vec2::new(10.0, 0.0)).r > 0.99, "end is c1");
-        assert!((g.sample(Vec2::new(5.0, 0.0)).r - 0.5).abs() < 0.05, "midpoint is halfway");
+        assert!(
+            (g.sample(Vec2::new(5.0, 0.0)).r - 0.5).abs() < 0.05,
+            "midpoint is halfway"
+        );
+    }
+
+    #[test]
+    fn stroke_covers_the_line_not_the_gap() {
+        let bg = Rgba::new(0.0, 0.0, 0.0, 1.0);
+        let mut fb = Framebuffer::new(40, 40, bg);
+        let line = [
+            PathCmd::MoveTo(Vec2::new(5.0, 20.0)),
+            PathCmd::LineTo(Vec2::new(35.0, 20.0)),
+        ];
+        stroke_cmds(
+            &mut fb,
+            &line,
+            6.0,
+            Paint::Solid(Rgba::new(1.0, 1.0, 1.0, 1.0)),
+            None,
+            false,
+        );
+        assert!(fb.pixel(20, 20).r > 0.9, "on the stroke should be filled");
+        assert!(
+            fb.pixel(20, 3).r < 0.1,
+            "away from the stroke should be empty"
+        );
     }
 }
-

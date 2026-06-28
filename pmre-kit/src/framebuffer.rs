@@ -32,7 +32,12 @@ impl Framebuffer {
             return;
         }
         let mix = |s: f32, d: f32| (s * src.a + d * dst.a * (1.0 - src.a)) / out_a;
-        self.pixels[i] = Rgba::new(mix(src.r, dst.r), mix(src.g, dst.g), mix(src.b, dst.b), out_a);
+        self.pixels[i] = Rgba::new(
+            mix(src.r, dst.r),
+            mix(src.g, dst.g),
+            mix(src.b, dst.b),
+            out_a,
+        );
     }
 
     /// Encode as a 24-bit BMP, flattening straight alpha over `background`.

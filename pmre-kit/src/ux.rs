@@ -62,10 +62,20 @@ pub struct Edges {
 
 impl Edges {
     pub fn all(v: f32) -> Self {
-        Self { l: v, t: v, r: v, b: v }
+        Self {
+            l: v,
+            t: v,
+            r: v,
+            b: v,
+        }
     }
     pub fn xy(x: f32, y: f32) -> Self {
-        Self { l: x, t: y, r: x, b: y }
+        Self {
+            l: x,
+            t: y,
+            r: x,
+            b: y,
+        }
     }
 }
 
@@ -107,10 +117,16 @@ impl Default for Style {
 
 impl Style {
     pub fn row() -> Self {
-        Self { dir: Dir::Row, ..Self::default() }
+        Self {
+            dir: Dir::Row,
+            ..Self::default()
+        }
     }
     pub fn col() -> Self {
-        Self { dir: Dir::Column, ..Self::default() }
+        Self {
+            dir: Dir::Column,
+            ..Self::default()
+        }
     }
     pub fn w(mut self, d: Dim) -> Self {
         self.width = d;
@@ -168,8 +184,15 @@ impl Style {
 /// A UXI node: either a styled box with children, or a run of text.
 #[derive(Clone, Debug)]
 pub enum UxNode {
-    Box { style: Style, children: Vec<UxNode> },
-    Text { content: String, size: f32, color: Rgba },
+    Box {
+        style: Style,
+        children: Vec<UxNode>,
+    },
+    Text {
+        content: String,
+        size: f32,
+        color: Rgba,
+    },
 }
 
 impl UxNode {
@@ -177,6 +200,10 @@ impl UxNode {
         UxNode::Box { style, children }
     }
     pub fn text(content: impl Into<String>, size: f32, color: Rgba) -> UxNode {
-        UxNode::Text { content: content.into(), size, color }
+        UxNode::Text {
+            content: content.into(),
+            size,
+            color,
+        }
     }
 }
