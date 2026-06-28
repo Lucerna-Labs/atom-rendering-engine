@@ -49,12 +49,21 @@ painter's algorithm.
   same box-model + layout + paint core.
 - **Interaction** — buttons (hover / press / click), toggles, a scrollable region with clipping,
   a live scrollbar (wheel scroll **and** thumb drag), hit-testing, and auto-resize reflow.
+- **Text input** — focusable fields with typed characters, backspace, a caret, and Enter-to-submit.
 - **Live window** — a winit + softbuffer runner that blits the CPU framebuffer straight to the
   screen with real mouse, wheel, and resize events.
 
 | Paths & holes | Gradients | Strokes |
 |---|---|---|
 | ![paths](docs/paths.png) | ![gradients](docs/gradients.png) | ![stroke](docs/stroke.png) |
+
+## Real apps
+
+Two self-verifying apps are built on the engine — a calculator and a todo list — exercising
+layout, buttons, toggles, scroll, **text input**, and click handling end to end. Each drives a
+real interaction sequence through the engine and asserts the result before rendering.
+
+![todo](docs/todo.png)
 
 ## Build & run
 
@@ -66,6 +75,8 @@ cargo run -p pmre-orchestrator --example stroke      # strokes: outlined star, p
 cargo run -p pmre-orchestrator --example gradients   # linear + radial gradients
 cargo run -p pmre-orchestrator --example uxi         # a UXI dashboard
 cargo run -p pmre-orchestrator --example html        # HTML/CSS reduced to primitives
+cargo run -p pmre-orchestrator --example calc        # a working calculator (real app)
+cargo run -p pmre-orchestrator --example todo        # a todo app: type, add, check, delete (real app)
 
 # Interaction, driven headlessly to image frames
 cargo run -p pmre-orchestrator --example ui

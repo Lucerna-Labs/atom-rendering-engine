@@ -49,6 +49,7 @@ pub enum Role {
     Button,
     Toggle,
     Scroll,
+    Input,
 }
 
 /// Per-side lengths (padding / border insets).
@@ -178,6 +179,9 @@ impl Style {
     }
     pub fn scroll(self, id: u32) -> Self {
         self.interactive(id, Role::Scroll)
+    }
+    pub fn input(self, id: u32) -> Self {
+        self.interactive(id, Role::Input)
     }
 }
 

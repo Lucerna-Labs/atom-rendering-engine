@@ -136,6 +136,12 @@ pub struct UiState {
     pub scrolls: HashMap<u32, f32>,
     /// Scroll region whose scrollbar thumb is currently being dragged.
     pub drag: Option<u32>,
+    /// The focused text input, if any.
+    pub focused: Option<u32>,
+    /// Text contents per input field id.
+    pub inputs: HashMap<u32, String>,
+    /// Input field that received Enter since it was last polled.
+    pub submit: Option<u32>,
 }
 
 impl UiState {
@@ -162,6 +168,19 @@ impl UiState {
     pub fn take_click(&mut self) -> Option<u32> {
         self.clicked.take()
     }
+    pub fn is_focused(&self, id: u32) -> bool {
+        self.focused == Some(id)
+    }
+    pub fn input_text(&self, id: u32) -> &str {
+        self.inputs.get(&id).map(String::as_str).unwrap_or("")
+    }
+    pub fn clear_input(&mut self, id: u32) {
+        self.inputs.remove(&id);
+    }
+    /// The input field that received Enter since the last poll.
+    pub fn take_submit(&mut self) -> Option<u32> {
+        self.submit.take()
+    }
 }
 
 /// Pointer / window events fed to `handle_event`.
@@ -172,6 +191,12 @@ pub enum UiEvent {
     PointerUp(f32, f32),
     /// Vertical wheel: cursor position and a positive-down delta in pixels.
     Wheel(f32, f32, f32),
+    /// A typed character routed to the focused input.
+    Char(char),
+    /// Delete the last character of the focused input.
+    Backspace,
+    /// Enter pressed; marks the focused input as submitted.
+    Enter,
 }
 
 fn solve_for(build: &dyn Fn(&UiState) -> UxNode, state: &UiState) -> Vec<LaidBox> {
@@ -255,10 +280,16 @@ pub fn handle_event(state: &mut UiState, build: &dyn Fn(&UiState) -> UxNode, ev:
                     }
                 }
             }
+            let hit = layout::hit_test(&boxes, x, y);
+            // Clicking a text input focuses it; clicking anything else clears focus.
+            state.focused = match hit {
+                Some((id, Role::Input)) => Some(id),
+                _ => None,
+            };
             if state.drag.is_some() {
                 state.pressed = None;
             } else {
-                state.pressed = layout::hit_test(&boxes, x, y).map(|(id, _)| id);
+                state.pressed = hit.map(|(id, _)| id);
             }
         }
         UiEvent::PointerUp(x, y) => {
@@ -298,6 +329,21 @@ pub fn handle_event(state: &mut UiState, build: &dyn Fn(&UiState) -> UxNode, ev:
                 let next = (state.scroll_of(id) + delta).clamp(0.0, max);
                 state.scrolls.insert(id, next);
             }
+        }
+        UiEvent::Char(c) => {
+            if let Some(id) = state.focused {
+                if !c.is_control() {
+                    state.inputs.entry(id).or_default().push(c);
+                }
+            }
+        }
+        UiEvent::Backspace => {
+            if let Some(id) = state.focused {
+                state.inputs.entry(id).or_default().pop();
+            }
+        }
+        UiEvent::Enter => {
+            state.submit = state.focused;
         }
     }
 }
