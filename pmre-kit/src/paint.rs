@@ -126,6 +126,41 @@ impl Paint {
     }
 }
 
+/// Porter-Duff "over": straight-alpha `src` composited onto `dst`.
+/// `out = (src·αsrc + dst·αdst·(1−αsrc)) / αout`, `αout = αsrc + αdst·(1−αsrc)`.
+///
+/// Fast paths cover almost every UI pixel: opaque `src` replaces, transparent `src`
+/// keeps, and an opaque `dst` (the common case after an opaque clear) needs no divide.
+pub fn over(dst: Rgba, src: Rgba) -> Rgba {
+    if src.a >= 1.0 {
+        return src;
+    }
+    if src.a <= 0.0 {
+        return dst;
+    }
+    if dst.a >= 1.0 {
+        // αout = 1 exactly — plain lerp, no division
+        let inv = 1.0 - src.a;
+        return Rgba::new(
+            src.r * src.a + dst.r * inv,
+            src.g * src.a + dst.g * inv,
+            src.b * src.a + dst.b * inv,
+            1.0,
+        );
+    }
+    let out_a = src.a + dst.a * (1.0 - src.a);
+    if out_a <= 0.0 {
+        return Rgba::new(0.0, 0.0, 0.0, 0.0);
+    }
+    let mix = |s: f32, d: f32| (s * src.a + d * dst.a * (1.0 - src.a)) / out_a;
+    Rgba::new(
+        mix(src.r, dst.r),
+        mix(src.g, dst.g),
+        mix(src.b, dst.b),
+        out_a,
+    )
+}
+
 fn lerp_rgba(a: Rgba, b: Rgba, t: f32) -> Rgba {
     Rgba::new(
         a.r + (b.r - a.r) * t,
@@ -136,9 +171,24 @@ fn lerp_rgba(a: Rgba, b: Rgba, t: f32) -> Rgba {
 }
 
 /// One drawing instruction: a shape, how to fill it, and where to place it.
+/// `soft` widens the anti-aliasing band to that many local units — `0.0` renders a
+/// crisp edge; larger values produce a smooth falloff (drop shadows, glows).
 #[derive(Clone, Copy, Debug)]
 pub struct DrawCmd {
     pub shape: Shape,
     pub paint: Paint,
     pub transform: Affine,
+    pub soft: f32,
+}
+
+impl DrawCmd {
+    /// A crisp-edged command (`soft = 0`).
+    pub fn new(shape: Shape, paint: Paint, transform: Affine) -> Self {
+        Self {
+            shape,
+            paint,
+            transform,
+            soft: 0.0,
+        }
+    }
 }

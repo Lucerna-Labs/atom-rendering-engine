@@ -19,25 +19,12 @@ impl Framebuffer {
     }
 
     /// Porter-Duff "over": straight-alpha `src` composited onto the stored pixel.
-    /// `out = (src·αsrc + dst·αdst·(1−αsrc)) / αout`, `αout = αsrc + αdst·(1−αsrc)`.
     pub fn blend_over(&mut self, x: u32, y: u32, src: Rgba) {
         if x >= self.width || y >= self.height {
             return;
         }
         let i = (y * self.width + x) as usize;
-        let dst = self.pixels[i];
-        let out_a = src.a + dst.a * (1.0 - src.a);
-        if out_a <= 0.0 {
-            self.pixels[i] = Rgba::new(0.0, 0.0, 0.0, 0.0);
-            return;
-        }
-        let mix = |s: f32, d: f32| (s * src.a + d * dst.a * (1.0 - src.a)) / out_a;
-        self.pixels[i] = Rgba::new(
-            mix(src.r, dst.r),
-            mix(src.g, dst.g),
-            mix(src.b, dst.b),
-            out_a,
-        );
+        self.pixels[i] = crate::paint::over(self.pixels[i], src);
     }
 
     /// Encode as a 24-bit BMP, flattening straight alpha over `background`.
@@ -104,5 +91,94 @@ impl Framebuffer {
             return Rgba::new(0.0, 0.0, 0.0, 0.0);
         }
         self.pixels[(y * self.width + x) as usize]
+    }
+
+    /// Read-only view of the raw pixel buffer in row-major order.
+    pub fn pixels(&self) -> &[Rgba] {
+        &self.pixels
+    }
+
+    /// Mutable view of the raw pixel buffer for bulk writes (e.g. GPU readback).
+    pub fn pixels_mut(&mut self) -> &mut [Rgba] {
+        &mut self.pixels
+    }
+
+    /// Direct pixel write, bypassing Porter-Duff compositing.
+    pub fn set_pixel(&mut self, x: u32, y: u32, c: Rgba) {
+        if x < self.width && y < self.height {
+            self.pixels[(y * self.width + x) as usize] = c;
+        }
+    }
+}
+
+/// A pixel sink the rasterizer can target: the whole framebuffer, or one row-band of it.
+/// Keeping `scan_convert` / `text` generic over this lets the lane renderer write straight
+/// into a slice of the final buffer (no per-band temp buffer, no stitch) at absolute coords.
+pub trait Surface {
+    fn width(&self) -> u32;
+    fn height(&self) -> u32;
+    /// Device rows this surface accepts, `[lo, hi)`. Defaults to the whole height; a band
+    /// view narrows it so the rasterizer skips rows outside the band.
+    fn row_range(&self) -> (u32, u32) {
+        (0, self.height())
+    }
+    fn blend_over(&mut self, x: u32, y: u32, src: Rgba);
+}
+
+impl Surface for Framebuffer {
+    fn width(&self) -> u32 {
+        self.width
+    }
+    fn height(&self) -> u32 {
+        self.height
+    }
+    fn blend_over(&mut self, x: u32, y: u32, src: Rgba) {
+        Framebuffer::blend_over(self, x, y, src);
+    }
+}
+
+/// A view over one contiguous row-band of a frame — pixels for device rows
+/// `[y0, y0 + band_h)`, addressed in **absolute** device coordinates. Writing through it
+/// composites into the band's own slice; distinct bands of a frame are disjoint, so lanes
+/// never alias. No coordinate translation, so output matches a full-frame render exactly.
+pub struct BandView<'a> {
+    pixels: &'a mut [Rgba],
+    width: u32,
+    y0: u32,
+    band_h: u32,
+    full_h: u32,
+}
+
+impl<'a> BandView<'a> {
+    /// `pixels` is the band's rows (length `band_h * width`); `y0` is its first device row;
+    /// `full_h` is the height of the whole frame.
+    pub fn new(pixels: &'a mut [Rgba], width: u32, y0: u32, full_h: u32) -> Self {
+        let band_h = pixels.len() as u32 / width.max(1);
+        Self {
+            pixels,
+            width,
+            y0,
+            band_h,
+            full_h,
+        }
+    }
+}
+
+impl Surface for BandView<'_> {
+    fn width(&self) -> u32 {
+        self.width
+    }
+    fn height(&self) -> u32 {
+        self.full_h
+    }
+    fn row_range(&self) -> (u32, u32) {
+        (self.y0, self.y0 + self.band_h)
+    }
+    fn blend_over(&mut self, x: u32, y: u32, src: Rgba) {
+        if x >= self.width || y < self.y0 || y >= self.y0 + self.band_h {
+            return;
+        }
+        let i = ((y - self.y0) * self.width + x) as usize;
+        self.pixels[i] = crate::paint::over(self.pixels[i], src);
     }
 }

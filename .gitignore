@@ -4,3 +4,8 @@
 # Generated render artifacts (examples write these to the workspace root)
 *.bmp
 /*.png
+
+# Unrelated local experiments living beside the engine (separate projects, not part
+# of this repo)
+/Rendering primitive create for ordo/
+/ordo-primitve engine/

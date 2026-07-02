@@ -7,6 +7,8 @@ description = "The single orchestrator: all policy, no mechanism. Drives the kit
 
 [dependencies]
 pmre-kit = { path = "../pmre-kit" }
+wgpu     = "22"
+pollster = "0.3"
 
 [[example]]
 name = "demo"
@@ -15,6 +17,18 @@ path = "examples/demo.rs"
 [[example]]
 name = "app"
 path = "examples/app.rs"
+
+[[example]]
+name = "ordo"
+path = "examples/ordo.rs"
+
+[[example]]
+name = "bloom"
+path = "examples/bloom.rs"
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
 
 # No dependencies anywhere. The live window (examples/app.rs) calls the OS windowing API
 # directly via raw FFI (user32/gdi32) instead of a wrapper crate, so the whole workspace —

@@ -5,7 +5,7 @@
 
 use crate::geom::{Affine, Vec2};
 use crate::paint::{Bounds, DrawCmd, Paint, Rgba, Shape};
-use crate::ux::{Align, Dim, Dir, Edges, Justify, Role, Style, UxNode};
+use crate::ux::{Align, Dim, Dir, Edges, Justify, Role, Shadow, Span, Style, UxNode};
 
 /// What a laid-out box paints as.
 #[derive(Clone, Debug)]
@@ -14,12 +14,15 @@ pub enum Painted {
         background: Option<Rgba>,
         radius: f32,
         border: Option<(f32, Rgba)>,
+        shadow: Option<Shadow>,
     },
     Text {
         content: String,
         size: f32,
         color: Rgba,
     },
+    /// A rich inline flow; the painter re-breaks the spans at the solved rect width.
+    Rich { spans: Vec<Span>, align: Align },
 }
 
 /// A node with its solved device-space rectangle and interaction metadata.
@@ -40,9 +43,19 @@ pub type ScrollFn<'a> = dyn Fn(u32) -> f32 + 'a;
 
 /// Solve layout for `root` inside `viewport`. `scroll` supplies each scroll region's offset.
 pub fn solve(root: &UxNode, viewport: Bounds, scroll: &ScrollFn) -> Vec<LaidBox> {
+    // the memo is keyed by node address — valid only while this tree is alive, so it
+    // must be reset at every entry
+    MEASURE_MEMO.with(|m| m.borrow_mut().clear());
     let mut out = Vec::new();
     layout_node(root, viewport, None, scroll, &mut out);
     out
+}
+
+thread_local! {
+    /// Per-solve memo for `measure`: without it, the flex-row second pass measures
+    /// children twice per level, which goes exponential on deeply nested rows.
+    static MEASURE_MEMO: std::cell::RefCell<std::collections::HashMap<(usize, u32), (f32, f32)>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 /// Topmost interactive box containing the point (respecting clip), as `(id, role)`.
@@ -70,6 +83,116 @@ fn contains(b: Bounds, x: f32, y: f32) -> bool {
 /// Text advance width — single source of truth shared with the glyph rasterizer.
 pub fn text_width(content: &str, size: f32) -> f32 {
     crate::text::advance(content, size)
+}
+
+// ── Rich inline flow ─────────────────────────────────────────────────────────
+
+/// One placed fragment of a wrapped rich line: a same-style run at `x` within the line.
+#[derive(Clone, Debug)]
+pub struct RichPiece {
+    pub text: String,
+    pub size: f32,
+    pub color: Rgba,
+    pub bold: bool,
+    pub underline: bool,
+    pub x: f32,
+    pub width: f32,
+}
+
+/// One wrapped line of a rich flow.
+#[derive(Clone, Debug)]
+pub struct RichLine {
+    pub pieces: Vec<RichPiece>,
+    pub width: f32,
+}
+
+/// Break styled spans into wrapped lines (greedy, word-granular). Returns the lines and
+/// the uniform line height (1.3× the largest span size). Spans flow inline: a word from
+/// a bold span continues the same line as the plain words before it.
+pub fn rich_lines(spans: &[Span], max_width: Option<f32>) -> (Vec<RichLine>, f32) {
+    let max_size = spans.iter().map(|s| s.size).fold(1.0f32, f32::max);
+    let line_h = max_size * 1.3;
+    let max_w = max_width.filter(|w| *w > 0.0).unwrap_or(f32::INFINITY);
+
+    let mut lines: Vec<RichLine> = Vec::new();
+    let mut cur = RichLine {
+        pieces: Vec::new(),
+        width: 0.0,
+    };
+    // The span index of the piece currently being extended, for run merging.
+    let mut cur_span: Option<usize> = None;
+    let mut pending_space = false;
+
+    for (si, span) in spans.iter().enumerate() {
+        let starts_ws = span.text.starts_with(char::is_whitespace);
+        let ends_ws = span.text.ends_with(char::is_whitespace);
+        let mut any_word = false;
+        for (wi, word) in span.text.split_whitespace().enumerate() {
+            any_word = true;
+            let space_before = if wi == 0 {
+                pending_space || (si > 0 && starts_ws)
+            } else {
+                true
+            };
+            let word_w = crate::text::advance_styled(word, span.size, span.bold);
+            let space_w = if space_before && !cur.pieces.is_empty() {
+                crate::text::advance_styled(" ", span.size, span.bold)
+            } else {
+                0.0
+            };
+            if !cur.pieces.is_empty() && cur.width + space_w + word_w > max_w {
+                lines.push(std::mem::replace(
+                    &mut cur,
+                    RichLine {
+                        pieces: Vec::new(),
+                        width: 0.0,
+                    },
+                ));
+                cur_span = None;
+            }
+            if !cur.pieces.is_empty() && cur_span == Some(si) {
+                // same style run continues on this line — extend the piece
+                let piece = cur.pieces.last_mut().unwrap();
+                if space_before {
+                    piece.text.push(' ');
+                }
+                piece.text.push_str(word);
+                piece.width += space_w + word_w;
+                cur.width += space_w + word_w;
+            } else {
+                let space_w = if cur.pieces.is_empty() { 0.0 } else { space_w };
+                let x = cur.width + space_w;
+                cur.pieces.push(RichPiece {
+                    text: word.to_string(),
+                    size: span.size,
+                    color: span.color,
+                    bold: span.bold,
+                    underline: span.underline,
+                    x,
+                    width: word_w,
+                });
+                cur.width = x + word_w;
+                cur_span = Some(si);
+            }
+            pending_space = false;
+        }
+        if any_word {
+            pending_space = ends_ws;
+        } else if !span.text.is_empty() {
+            // whitespace-only span still separates its neighbors
+            pending_space = true;
+        }
+    }
+    if !cur.pieces.is_empty() {
+        lines.push(cur);
+    }
+    if lines.is_empty() {
+        lines.push(RichLine {
+            pieces: Vec::new(),
+            width: 0.0,
+        });
+    }
+    (lines, line_h)
 }
 
 fn extent(b: Bounds) -> (f32, f32) {
@@ -102,13 +225,35 @@ fn node_dim(node: &UxNode, want_width: bool) -> Dim {
                 style.height
             }
         }
-        UxNode::Text { .. } => Dim::Auto,
+        UxNode::Text { .. } | UxNode::Rich { .. } => Dim::Auto,
     }
 }
 
-/// Intrinsic (content) size of a node. When `avail_w` is given, text wraps to it and the
-/// returned height reflects the wrapped line count (so a column reserves the right height).
+/// Margin edges of a node (only boxes carry style).
+fn node_margin(node: &UxNode) -> Edges {
+    match node {
+        UxNode::Box { style, .. } => style.margin,
+        _ => Edges::default(),
+    }
+}
+
+/// Intrinsic (content) size of a node — the node's **outer** size, margins included.
+/// When `avail_w` is given, text wraps to it and the returned height reflects the
+/// wrapped line count (so a column reserves the right height). Memoized per solve.
 fn measure(node: &UxNode, avail_w: Option<f32>) -> (f32, f32) {
+    let key = (
+        node as *const UxNode as usize,
+        avail_w.map(f32::to_bits).unwrap_or(u32::MAX),
+    );
+    if let Some(v) = MEASURE_MEMO.with(|m| m.borrow().get(&key).copied()) {
+        return v;
+    }
+    let v = measure_inner(node, avail_w);
+    MEASURE_MEMO.with(|m| m.borrow_mut().insert(key, v));
+    v
+}
+
+fn measure_inner(node: &UxNode, avail_w: Option<f32>) -> (f32, f32) {
     match node {
         UxNode::Text { content, size, .. } => {
             let single = text_width(content, *size);
@@ -121,15 +266,38 @@ fn measure(node: &UxNode, avail_w: Option<f32>) -> (f32, f32) {
                 _ => (single, line_h),
             }
         }
+        UxNode::Rich { spans, .. } => {
+            let (lines, line_h) = rich_lines(spans, avail_w.filter(|w| *w > 0.0));
+            let w = lines.iter().map(|l| l.width).fold(0.0f32, f32::max);
+            (w, lines.len() as f32 * line_h)
+        }
         UxNode::Box { style, children } => {
             let bw = style.border.map(|(w, _)| w).unwrap_or(0.0);
             let pad_w = style.padding.l + style.padding.r + 2.0 * bw;
             let pad_h = style.padding.t + style.padding.b + 2.0 * bw;
+            // When this box's width is knowable, propagate it so nested text wraps and
+            // the measured height reflects the real wrapped line count.
+            let m_lr = style.margin.l + style.margin.r;
+            // `avail_w` is margin-box space offered by the parent; `self_w` is this box's
+            // border-box width when knowable. Pct resolves against the parent content
+            // extent exactly like the flex solver does, so measure and layout agree.
+            let self_w = match style.width {
+                Dim::Px(v) => Some(v),
+                Dim::Pct(p) => avail_w.map(|w| (w * p / 100.0).max(0.0)),
+                _ => avail_w.map(|w| (w - m_lr).max(0.0)),
+            };
+            let child_avail = match style.dir {
+                Dir::Column => self_w.map(|w| (w - pad_w).max(0.0)),
+                Dir::Row => None,
+            };
+            let n = children.len();
+            let firsts: Vec<(f32, f32)> = children
+                .iter()
+                .map(|ch| measure(ch, child_avail))
+                .collect();
             let mut main = 0.0f32;
             let mut cross = 0.0f32;
-            let n = children.len();
-            for (i, ch) in children.iter().enumerate() {
-                let (cw, chh) = measure(ch, None);
+            for (i, &(cw, chh)) in firsts.iter().enumerate() {
                 let (cm, cc) = match style.dir {
                     Dir::Row => (cw, chh),
                     Dir::Column => (chh, cw),
@@ -139,6 +307,55 @@ fn measure(node: &UxNode, avail_w: Option<f32>) -> (f32, f32) {
                     main += style.gap;
                 }
                 cross = cross.max(cc);
+            }
+            // Second pass for rows with a known width: give each child its real main-axis
+            // share (mirroring the flex solver) and re-measure, so wrapped text inside
+            // flex items reports its true height instead of a single-line estimate.
+            // First-pass results are reused wherever the allotted width equals the
+            // intrinsic width, keeping the recursion linear in the tree size.
+            if matches!(style.dir, Dir::Row) && n > 0 {
+                if let Some(w) = self_w {
+                    let inner = (w - pad_w).max(0.0);
+                    let mut bases = Vec::with_capacity(n);
+                    let mut weights = Vec::with_capacity(n);
+                    let (mut sum_base, mut sum_flex) = (0.0f32, 0.0f32);
+                    for (i, ch) in children.iter().enumerate() {
+                        let m = node_margin(ch);
+                        let mm = m.l + m.r;
+                        let (base, wt) = match node_dim(ch, true) {
+                            Dim::Px(v) => (v + mm, 0.0),
+                            Dim::Pct(p) => (p / 100.0 * inner + mm, 0.0),
+                            Dim::Auto => (firsts[i].0, 0.0),
+                            Dim::Flex(f) => (mm, f),
+                        };
+                        bases.push(base);
+                        weights.push(wt);
+                        sum_base += base;
+                        sum_flex += wt;
+                    }
+                    let gaps = style.gap * (n as f32 - 1.0);
+                    let free = (inner - sum_base - gaps).max(0.0);
+                    let mut tallest = 0.0f32;
+                    for (i, ch) in children.iter().enumerate() {
+                        let auto = matches!(node_dim(ch, true), Dim::Auto);
+                        let ch_h = if auto && weights[i] == 0.0 {
+                            // allotted == intrinsic width — the first pass already
+                            // measured this child at exactly that width
+                            firsts[i].1
+                        } else {
+                            let allotted = bases[i]
+                                + if sum_flex > 0.0 {
+                                    free * weights[i] / sum_flex
+                                } else {
+                                    0.0
+                                };
+                            // `allotted` is margin-box space, which is what measure takes
+                            measure(ch, Some(allotted)).1
+                        };
+                        tallest = tallest.max(ch_h);
+                    }
+                    cross = tallest;
+                }
             }
             let (iw, ih) = match style.dir {
                 Dir::Row => (main, cross),
@@ -152,7 +369,10 @@ fn measure(node: &UxNode, avail_w: Option<f32>) -> (f32, f32) {
                 Dim::Px(v) => v,
                 _ => ih + pad_h,
             };
-            (w, h)
+            (
+                w + style.margin.l + style.margin.r,
+                h + style.margin.t + style.margin.b,
+            )
         }
     }
 }
@@ -183,7 +403,22 @@ fn layout_node(
                 content_len: 0.0,
             });
         }
+        UxNode::Rich { spans, align } => {
+            out.push(LaidBox {
+                rect,
+                kind: Painted::Rich {
+                    spans: spans.clone(),
+                    align: *align,
+                },
+                id: None,
+                role: Role::None,
+                clip,
+                content_len: 0.0,
+            });
+        }
         UxNode::Box { style, children } => {
+            // the given rect is the outer (margin) box; margins are outside the border
+            let rect = inset(rect, style.margin, 0.0);
             let bw = style.border.map(|(w, _)| w).unwrap_or(0.0);
             let content = inset(rect, style.padding, bw);
 
@@ -196,6 +431,7 @@ fn layout_node(
                         background: style.background,
                         radius: style.radius,
                         border: style.border,
+                        shadow: style.shadow,
                     },
                     id: style.id,
                     role: style.role,
@@ -203,7 +439,15 @@ fn layout_node(
                     content_len,
                 });
                 let inner_clip = clip_to(clip, rect);
-                let off = style.id.map(scroll).unwrap_or(0.0);
+                // Re-clamp the stored offset against the *current* content height, so a
+                // list that shrinks while scrolled (e.g. items deleted) never renders
+                // scrolled past its own end.
+                let view_h = rect.max.y - rect.min.y;
+                let off = style
+                    .id
+                    .map(scroll)
+                    .unwrap_or(0.0)
+                    .clamp(0.0, (content_len - view_h).max(0.0));
                 let mut cursor = content.min.y - off;
                 for ch in children {
                     let (_, chh) = measure(ch, Some(cw));
@@ -221,6 +465,7 @@ fn layout_node(
                         background: style.background,
                         radius: style.radius,
                         border: style.border,
+                        shadow: style.shadow,
                     },
                     id: style.id,
                     role: style.role,
@@ -278,11 +523,14 @@ fn layout_children(
     for ch in children {
         let (mw, mh) = measure(ch, avail_for_child);
         let measured_main = if main_is_width { mw } else { mh };
+        let m = node_margin(ch);
+        let m_main = if main_is_width { m.l + m.r } else { m.t + m.b };
         let (base, weight) = match node_dim(ch, main_is_width) {
-            Dim::Px(v) => (v, 0.0),
+            Dim::Px(v) => (v + m_main, 0.0),
+            Dim::Pct(p) => (p / 100.0 * main_extent + m_main, 0.0),
             Dim::Auto => (measured_main, 0.0),
             // `flex:N` is `flex-basis: 0` — size by grow share alone, so items fit (and shrink).
-            Dim::Flex(w) => (0.0, w),
+            Dim::Flex(w) => (m_main, w),
         };
         bases.push(base);
         weights.push(weight);
@@ -307,10 +555,20 @@ fn layout_children(
     let mut cursor = main_start + lead;
     for (i, ch) in children.iter().enumerate() {
         let cm = mains[i];
-        let (mw, mh) = measure(ch, avail_for_child);
+        // In a row, re-measure the child at its solved width so wrapping content
+        // reports its true height for non-Stretch alignment.
+        let cross_avail = if main_is_width {
+            Some(cm)
+        } else {
+            avail_for_child
+        };
+        let (mw, mh) = measure(ch, cross_avail);
         let measured_cross = if main_is_width { mh } else { mw };
+        let m = node_margin(ch);
+        let m_cross = if main_is_width { m.t + m.b } else { m.l + m.r };
         let cc = match node_dim(ch, !main_is_width) {
-            Dim::Px(v) => v,
+            Dim::Px(v) => v + m_cross,
+            Dim::Pct(p) => p / 100.0 * cross_extent + m_cross,
             _ => {
                 if matches!(style.align, Align::Stretch) {
                     cross_extent
@@ -377,35 +635,45 @@ pub fn cmds_for(b: &LaidBox, out: &mut Vec<DrawCmd>) {
         background,
         radius,
         border,
+        shadow,
     } = &b.kind
     {
         let r = radius.min(half.x).min(half.y).max(0.0);
+        if let Some(sh) = shadow {
+            // Soft falloff via a wide AA band over the same rounded-rect SDF.
+            out.push(DrawCmd {
+                shape: Shape::RoundedRect { half, radius: r },
+                paint: Paint::Solid(sh.color),
+                transform: Affine::translate(center.x + sh.dx, center.y + sh.dy),
+                soft: sh.blur.max(0.5),
+            });
+        }
         match border {
             Some((bw, bc)) => {
-                out.push(DrawCmd {
-                    shape: Shape::RoundedRect { half, radius: r },
-                    paint: Paint::Solid(*bc),
-                    transform: at,
-                });
+                out.push(DrawCmd::new(
+                    Shape::RoundedRect { half, radius: r },
+                    Paint::Solid(*bc),
+                    at,
+                ));
                 if let Some(bg) = background {
                     let inner = Vec2::new((half.x - bw).max(0.0), (half.y - bw).max(0.0));
-                    out.push(DrawCmd {
-                        shape: Shape::RoundedRect {
+                    out.push(DrawCmd::new(
+                        Shape::RoundedRect {
                             half: inner,
                             radius: (r - bw).max(0.0),
                         },
-                        paint: Paint::Solid(*bg),
-                        transform: at,
-                    });
+                        Paint::Solid(*bg),
+                        at,
+                    ));
                 }
             }
             None => {
                 if let Some(bg) = background {
-                    out.push(DrawCmd {
-                        shape: Shape::RoundedRect { half, radius: r },
-                        paint: Paint::Solid(*bg),
-                        transform: at,
-                    });
+                    out.push(DrawCmd::new(
+                        Shape::RoundedRect { half, radius: r },
+                        Paint::Solid(*bg),
+                        at,
+                    ));
                 }
             }
         }

@@ -6,7 +6,7 @@
 //! · `combine` (alpha-over) into one shape → pixels operation. Mechanism only: it never
 //! decides draw order, clipping, or which generator to use — that is the orchestrator's job.
 
-use crate::framebuffer::Framebuffer;
+use crate::framebuffer::Surface;
 use crate::geom::Vec2;
 use crate::paint::{Bounds, DrawCmd, Shape};
 
@@ -43,31 +43,58 @@ pub fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// Scan-convert one command into the framebuffer using the SDF coverage generator.
-pub fn scan_convert(cmd: &DrawCmd, fb: &mut Framebuffer, clip: Option<Bounds>) {
-    let inv = cmd.transform.inverse();
+/// Scan-convert one command into `surf` using the SDF coverage generator. Generic over the
+/// pixel sink so it can target a whole framebuffer or one row-band of it (see `Surface`).
+/// Pure translations (every box the layout solver emits) take a fast path that replaces
+/// the per-pixel inverse-matrix multiply with a subtraction.
+pub fn scan_convert<S: Surface>(cmd: &DrawCmd, surf: &mut S, clip: Option<Bounds>) {
     // One device pixel measured in local units — the width of the anti-aliasing band.
-    let aa = (1.0 / cmd.transform.scale_factor().max(1e-6)).max(1e-4);
-    let (x0, y0, x1, y1) = device_bounds(cmd, fb.width, fb.height, clip);
+    // A `soft` command widens the band for smooth falloff (shadows, glows).
+    let aa = (1.0 / cmd.transform.scale_factor().max(1e-6))
+        .max(1e-4)
+        .max(cmd.soft);
+    let bounds = device_bounds(cmd, surf.width(), surf.height(), surf.row_range(), clip);
+    let t = cmd.transform;
+    if t.a == 1.0 && t.d == 1.0 && t.b == 0.0 && t.c == 0.0 {
+        convert_rows(cmd, surf, bounds, aa, |x, y| Vec2::new(x - t.e, y - t.f));
+    } else {
+        let inv = t.inverse();
+        convert_rows(cmd, surf, bounds, aa, move |x, y| inv.apply(Vec2::new(x, y)));
+    }
+}
+
+fn convert_rows<S: Surface, M: Fn(f32, f32) -> Vec2>(
+    cmd: &DrawCmd,
+    surf: &mut S,
+    (x0, y0, x1, y1): (u32, u32, u32, u32),
+    aa: f32,
+    to_local: M,
+) {
     for y in y0..y1 {
+        let py = y as f32 + 0.5;
         for x in x0..x1 {
-            let p = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
-            let local = inv.apply(p);
+            let local = to_local(x as f32 + 0.5, py);
             let d = signed_distance(&cmd.shape, local);
             let cov = coverage(d, aa);
             if cov > 0.0 {
                 // Sample the paint at the shape-local point (gradients move with the shape).
                 let col = cmd.paint.sample(local);
-                fb.blend_over(x, y, col.with_alpha(col.a * cov));
+                surf.blend_over(x, y, col.with_alpha(col.a * cov));
             }
         }
     }
 }
 
 /// Device-space pixel bounds the command can touch (its transformed, padded local box),
-/// intersected with the optional clip rectangle.
-fn device_bounds(cmd: &DrawCmd, w: u32, h: u32, clip: Option<Bounds>) -> (u32, u32, u32, u32) {
-    let lb = cmd.shape.local_bounds().pad(2.0);
+/// intersected with the optional clip rectangle and the surface's accepted row range `rows`.
+fn device_bounds(
+    cmd: &DrawCmd,
+    w: u32,
+    h: u32,
+    rows: (u32, u32),
+    clip: Option<Bounds>,
+) -> (u32, u32, u32, u32) {
+    let lb = cmd.shape.local_bounds().pad(2.0 + cmd.soft);
     let corners = [
         Vec2::new(lb.min.x, lb.min.y),
         Vec2::new(lb.max.x, lb.min.y),
@@ -88,9 +115,10 @@ fn device_bounds(cmd: &DrawCmd, w: u32, h: u32, clip: Option<Bounds>) -> (u32, u
         maxx = maxx.min(c.max.x);
         maxy = maxy.min(c.max.y);
     }
+    let (rlo, rhi) = rows;
     let x0 = minx.floor().max(0.0) as u32;
-    let y0 = miny.floor().max(0.0) as u32;
+    let y0 = (miny.floor().max(0.0) as u32).max(rlo);
     let x1 = (maxx.ceil().max(0.0) as u32).min(w);
-    let y1 = (maxy.ceil().max(0.0) as u32).min(h);
+    let y1 = (maxy.ceil().max(0.0) as u32).min(h).min(rhi);
     (x0, y0, x1, y1)
 }

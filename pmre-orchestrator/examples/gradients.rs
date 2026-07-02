@@ -49,6 +49,7 @@ fn main() {
                 c1: Rgba::rgb8(175, 80, 230),
             },
             transform: Affine::translate(190.0, 170.0),
+            soft: 0.0,
         },
     );
 
@@ -64,6 +65,7 @@ fn main() {
                 c1: Rgba::rgb8(40, 90, 200),
             },
             transform: Affine::translate(470.0, 170.0),
+            soft: 0.0,
         },
     );
 

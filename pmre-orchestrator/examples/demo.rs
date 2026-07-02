@@ -19,6 +19,7 @@ fn main() {
             },
             paint: Paint::Solid(Rgba::rgb8(60, 120, 220)),
             transform: Affine::translate(230.0, 180.0),
+            soft: 0.0,
         },
     );
 
@@ -29,6 +30,7 @@ fn main() {
             shape: Shape::Circle { radius: 70.0 },
             paint: Paint::Solid(Rgba::new(1.0, 0.42, 0.30, 0.85)),
             transform: Affine::translate(410.0, 140.0),
+            soft: 0.0,
         },
     );
 
@@ -43,6 +45,7 @@ fn main() {
             },
             paint: Paint::Solid(Rgba::rgb8(245, 210, 90)),
             transform: Affine::translate(320.0, 285.0),
+            soft: 0.0,
         },
     );
 

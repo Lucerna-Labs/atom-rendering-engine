@@ -1,12 +1,17 @@
 # Primitive Math Rendering Engine
 
-[![CI](https://github.com/Rekonquest/primitive-math-rendering-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Rekonquest/primitive-math-rendering-engine/actions/workflows/ci.yml)
+[![CI](https://github.com/Lucerna-Labs/primitive-math-rendering-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Lucerna-Labs/primitive-math-rendering-engine/actions/workflows/ci.yml)
+
+A [Lucerna Labs](https://github.com/Lucerna-Labs) project.
+**Building on the engine?** Start with the [Developer Guide](docs/DEVELOPER_GUIDE.md).
 
 A from-scratch 2D UI rendering engine built **entirely from mathematical primitives** —
 no GPU vector library (no Vello, Skia, or Cairo), no web engine, no Tauri/Electron. Shapes
 are rasterized from signed-distance fields with analytic anti-aliasing, arbitrary contours
-from a scanline path filler, text from a bitmap font, and it composites, lays out, and runs
-an interactive widget loop entirely on the CPU.
+from a scanline path filler, and text from **real TrueType outlines** — a built-in
+zero-dependency `.ttf` parser + accumulation-buffer glyph rasterizer that reads the system
+font with `std::fs` (bitmap-font fallback when none exists). It composites, lays out, and
+runs an interactive widget loop entirely on the CPU.
 
 ![UI](docs/screenshot.png)
 
@@ -17,8 +22,10 @@ Two crates, and only two, per the Composition doctrine:
 - **`pmre-kit`** — *the kit*: all the dumb, decision-free mechanism. The eight root atoms
   (`scan · hash · fold · project · scale · compare · combine · order`), geometry + affine
   transforms, SDF coverage + smoothstep anti-aliasing, a scanline path rasterizer (fills and
-  strokes), two-stop gradients, alpha-over compositing, a bitmap glyph rasterizer, the reduced
-  flex/box layout solver, hit-testing, and clipping. Zero dependencies.
+  strokes), two-stop gradients, alpha-over compositing, a TrueType parser + anti-aliased
+  glyph rasterizer (with a bitmap fallback tier), rich inline text flow, the reduced
+  flex/box layout solver (margins, percentages, drop shadows), hit-testing, and clipping.
+  Zero dependencies.
 - **`pmre-orchestrator`** — *the orchestrator*: all policy, no mechanism. Painter order, the
   interaction state machine (hover / press / click / toggle / scroll / drag), scrollbars, and
   the resize loop. It drives the kit; it never touches a pixel itself. Zero runtime dependencies.
@@ -42,21 +49,36 @@ painter's algorithm.
 - **Paths** — fill and stroke arbitrary polygons and flattened Béziers (scanline rasterizer,
   nonzero winding so holes and self-overlap work; round joins and caps on strokes).
 - **Gradients** — two-stop linear and radial, sampled per pixel.
-- **Text** — a built-in bitmap font with word wrapping and clipping.
-- **Layout** — a reduced CSS-flexbox/block solver: row/column, `Auto`/`Px`/`Flex` sizing,
-  padding, gap, align, justify, borders, radius. Author intent; positions are *derived*.
+- **Text** — anti-aliased vector glyphs from the system TrueType font (`cmap` 4/12, simple
+  + composite `glyf` outlines, real advances and baselines), rasterized by a font-rs-style
+  accumulation buffer and cached per size; rich inline flows mix bold / underlined /
+  colored spans in one wrapping paragraph. Falls back to the built-in bitmap font when no
+  font file exists — still zero crates either way.
+- **Layout** — a reduced CSS-flexbox/block solver: row/column, `Auto`/`Px`/`Flex`/`%`
+  sizing, padding, **margins**, gap, align, justify, borders, radius, and soft
+  **box shadows** (wide-band SDF falloff). Author intent; positions are *derived*.
 - **Two front-ends, one core** — a UXI intent tree and an HTML/CSS document reduce onto the
-  same box-model + layout + paint core.
+  same box-model + layout + paint core. The HTML side handles comments, entities,
+  `<script>`/`<style>` skipping, inline elements coalescing into one text flow, lists,
+  `hr`, and a wide CSS subset (rgb/rgba/hsl/hex/named colors, text-align, font-weight,
+  opacity, box-shadow, per-side margin/padding).
 - **Interaction** — buttons (hover / press / click), toggles, a scrollable region with clipping,
   a live scrollbar (wheel scroll **and** thumb drag), hit-testing, and auto-resize reflow.
 - **Text input** — focusable fields with typed characters, backspace, a caret, and Enter-to-submit.
 - **Live window, zero dependencies** — the interactive todo window (`examples/app.rs`) drives the
   OS window **directly via raw Win32/GDI FFI** — no winit, no softbuffer, no crates — blitting the
-  CPU framebuffer to the screen with real mouse, wheel, keyboard, and resize events.
+  CPU framebuffer to the screen with real mouse, wheel, keyboard, and resize events. It is
+  **per-monitor DPI aware**: layout solves in logical units and paints at native pixels, so
+  glyph edges stay crisp on hi-DPI displays instead of being bitmap-stretched by Windows.
 
 | Paths & holes | Gradients | Strokes |
 |---|---|---|
 | ![paths](docs/paths.png) | ![gradients](docs/gradients.png) | ![stroke](docs/stroke.png) |
+
+An HTML document with inline CSS, rendered by the engine — inline bold/link/colored text
+wrapping in one flow, box shadows, lists, and system-font glyphs, with no browser engine:
+
+![html](docs/html.png)
 
 ## Real apps
 

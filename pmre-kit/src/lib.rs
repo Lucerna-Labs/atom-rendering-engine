@@ -7,6 +7,8 @@
 //! lives in `pmre-orchestrator`, never here. If a primitive in this crate grows an `if`
 //! that makes a value judgement, that `if` belongs in the orchestrator.
 
+pub mod bloom_sweep;
+pub mod fair_queue;
 pub mod font;
 pub mod framebuffer;
 pub mod geom;
@@ -14,15 +16,16 @@ pub mod html;
 pub mod layout;
 pub mod paint;
 pub mod path;
+pub mod post;
 pub mod raster;
 pub mod text;
 pub mod ux;
 
-pub use framebuffer::Framebuffer;
+pub use framebuffer::{BandView, Framebuffer, Surface};
 pub use geom::{Affine, Vec2};
 pub use paint::{Bounds, DrawCmd, Paint, Rgba, Shape};
 pub use path::PathCmd;
-pub use ux::{Align, Dim, Dir, Edges, Justify, Style, UxNode};
+pub use ux::{Align, Dim, Dir, Edges, Justify, Shadow, Span, Style, UxNode};
 
 /// The eight root atoms — the canonical vocabulary the whole kit specializes from.
 /// Each does exactly one thing and makes no decisions.
