@@ -1,4 +1,4 @@
-﻿//! A live, interactive **todo app** with ZERO external crates. The engine renders pure math
+//! A live, interactive **todo app** with ZERO external crates. The engine renders pure math
 //! into a CPU framebuffer; this runner drives a real OS window directly via raw Win32/GDI FFI
 //! â€” no winit, no softbuffer, no dependencies at all. Type a task and press Enter (or click
 //! ADD) to add it, click the circle to check it off, x to delete, wheel or drag the bar to scroll.
@@ -539,8 +539,7 @@ mod win {
                     let b = |s: &UiState| build(&app.todos, s);
                     handle_event(&mut app.ui, &b, ev);
                 }
-                let mut dirty =
-                    !was_move || before != (app.ui.hover, app.ui.pressed, app.ui.drag);
+                let mut dirty = !was_move || before != (app.ui.hover, app.ui.pressed, app.ui.drag);
                 if app.ui.drag.is_some() {
                     dirty = true; // dragging the scrollbar moves content every event
                 }
@@ -729,13 +728,13 @@ mod win {
                         let q = match app.quality {
                             Quality::Fast => "1:Fast",
                             Quality::Balanced => "2:Balanced",
-                            Quality::Full        => "3:Full",
+                            Quality::Full => "3:Full",
                             Quality::GpuBalanced => "4:GpuBalanced",
-                            Quality::GpuFull     => "5:GpuFull",
+                            Quality::GpuFull => "5:GpuFull",
                             Quality::ParallelBalanced => "6:ParBloom",
-                            Quality::ParallelFull     => "7:ParBigBloom",
-                            Quality::TiledBalanced    => "8:BusBloom",
-                            Quality::TiledFull        => "9:BusBigBloom",
+                            Quality::ParallelFull => "7:ParBigBloom",
+                            Quality::TiledBalanced => "8:BusBloom",
+                            Quality::TiledFull => "9:BusBigBloom",
                         };
                         let title = format!(
                             "Tasks  [{q}  {ms:.1}ms  {:.0}fps]  (1-9 to switch)",

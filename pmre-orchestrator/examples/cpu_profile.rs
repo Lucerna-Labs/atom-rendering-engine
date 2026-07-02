@@ -36,7 +36,11 @@ fn lime() -> Rgba {
 
 fn glow_dot(col: Rgba, size: f32) -> UxNode {
     UxNode::boxed(
-        Style::row().w(Dim::Px(size)).h(Dim::Px(size)).radius(size / 2.0).bg(col),
+        Style::row()
+            .w(Dim::Px(size))
+            .h(Dim::Px(size))
+            .radius(size / 2.0)
+            .bg(col),
         vec![],
     )
 }
@@ -118,7 +122,9 @@ fn main() {
         min: Vec2::new(0.0, 0.0),
         max: Vec2::new(w as f32, h as f32),
     };
-    let n_cpu = std::thread::available_parallelism().map(|c| c.get()).unwrap_or(1);
+    let n_cpu = std::thread::available_parallelism()
+        .map(|c| c.get())
+        .unwrap_or(1);
 
     // Pre-rendered framebuffer (no post) for the bloom-only measurements.
     let base = render_uxi(&root, w, h, bg());

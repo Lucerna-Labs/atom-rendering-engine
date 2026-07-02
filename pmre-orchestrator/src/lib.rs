@@ -113,18 +113,21 @@ fn paint_one_box<S: Surface>(surf: &mut S, laid: &LaidBox) {
                 };
                 // All pieces on a line share ONE baseline (set by the tallest piece);
                 // mixed sizes must sit on it, not center independently.
-                let max_size = line
-                    .pieces
-                    .iter()
-                    .map(|p| p.size)
-                    .fold(1.0f32, f32::max);
+                let max_size = line.pieces.iter().map(|p| p.size).fold(1.0f32, f32::max);
                 let (asc_l, desc_l) = text::v_metrics(max_size);
                 let baseline = y + (line_h - (asc_l + desc_l)) * 0.5 + asc_l;
                 for p in &line.pieces {
                     let (asc_p, _) = text::v_metrics_styled(p.size, p.bold);
                     let origin = Vec2::new(x0 + p.x, baseline - asc_p);
                     text::draw_styled(
-                        surf, &p.text, origin, p.size, p.color, laid.clip, p.bold, p.underline,
+                        surf,
+                        &p.text,
+                        origin,
+                        p.size,
+                        p.color,
+                        laid.clip,
+                        p.bold,
+                        p.underline,
                     );
                 }
                 y += line_h;
@@ -296,15 +299,15 @@ pub fn render_ui_quality(
 
 fn apply_quality(fb: &mut Framebuffer, quality: Quality) {
     match quality {
-        Quality::Fast             => {}
-        Quality::Balanced         => post::bloom(fb, 0.45, 3.0, 6),
-        Quality::Full             => post::bloom(fb, 0.45, 5.0, 12),
-        Quality::GpuBalanced      => gpu_bloom::gpu_bloom(fb, 0.45, 3.0, 6),
-        Quality::GpuFull          => gpu_bloom::gpu_bloom(fb, 0.45, 5.0, 12),
+        Quality::Fast => {}
+        Quality::Balanced => post::bloom(fb, 0.45, 3.0, 6),
+        Quality::Full => post::bloom(fb, 0.45, 5.0, 12),
+        Quality::GpuBalanced => gpu_bloom::gpu_bloom(fb, 0.45, 3.0, 6),
+        Quality::GpuFull => gpu_bloom::gpu_bloom(fb, 0.45, 5.0, 12),
         Quality::ParallelBalanced => post::bloom_parallel(fb, 0.45, 3.0, 6),
-        Quality::ParallelFull     => post::bloom_parallel(fb, 0.45, 5.0, 12),
-        Quality::TiledBalanced    => bloom_with(fb, 0.45, 3.0, 6, tiled_strategy()),
-        Quality::TiledFull        => bloom_with(fb, 0.45, 5.0, 12, tiled_strategy()),
+        Quality::ParallelFull => post::bloom_parallel(fb, 0.45, 5.0, 12),
+        Quality::TiledBalanced => bloom_with(fb, 0.45, 3.0, 6, tiled_strategy()),
+        Quality::TiledFull => bloom_with(fb, 0.45, 5.0, 12, tiled_strategy()),
     }
 }
 

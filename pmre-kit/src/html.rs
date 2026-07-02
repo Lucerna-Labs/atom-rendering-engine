@@ -285,7 +285,10 @@ fn find_attr(attrs: &str, want: &str) -> Option<String> {
         while i < b.len() && b[i] != '=' && !b[i].is_whitespace() {
             i += 1;
         }
-        let name: String = b[name_start..i].iter().collect::<String>().to_ascii_lowercase();
+        let name: String = b[name_start..i]
+            .iter()
+            .collect::<String>()
+            .to_ascii_lowercase();
         while i < b.len() && b[i].is_whitespace() {
             i += 1;
         }
@@ -405,7 +408,12 @@ fn tag_default_style(tag: &str) -> Style {
 /// shared `Rich` flows so mixed-style words wrap on the same lines. Inside a
 /// `display:flex` row (`flex_row`), CSS makes every child its own flex item instead,
 /// so inline elements stay separate boxes and the container's `gap` applies.
-fn children_to_ux(kids: &[Dom], inh: Inherited, li_prefix: Option<&str>, flex_row: bool) -> Vec<UxNode> {
+fn children_to_ux(
+    kids: &[Dom],
+    inh: Inherited,
+    li_prefix: Option<&str>,
+    flex_row: bool,
+) -> Vec<UxNode> {
     let mut out: Vec<UxNode> = Vec::new();
     let mut run: Vec<Span> = Vec::new();
     let mut first_flush = true;
@@ -480,7 +488,13 @@ fn make_span(text: &str, inh: Inherited) -> Span {
 }
 
 /// Flatten an inline element (possibly nested) into styled spans appended to `run`.
-fn inline_spans(tag: &str, style_attr: Option<&str>, kids: &[Dom], inh: Inherited, run: &mut Vec<Span>) {
+fn inline_spans(
+    tag: &str,
+    style_attr: Option<&str>,
+    kids: &[Dom],
+    inh: Inherited,
+    run: &mut Vec<Span>,
+) {
     let mut inh = inh;
     inh.font_size = tag_font(tag, inh.font_size);
     match tag {
@@ -770,7 +784,10 @@ fn parse_shadow(s: &str) -> Option<Shadow> {
     // pull out a functional color first, wherever it sits
     if let (Some(open), Some(close)) = (rest.find('('), rest.rfind(')')) {
         if close > open {
-            let start = rest[..open].rfind(char::is_whitespace).map(|i| i + 1).unwrap_or(0);
+            let start = rest[..open]
+                .rfind(char::is_whitespace)
+                .map(|i| i + 1)
+                .unwrap_or(0);
             color_str = rest[start..=close].to_string();
             rest.replace_range(start..=close, " ");
         }
@@ -847,9 +864,7 @@ fn parse_color(s: &str) -> Option<Rgba> {
             let g = ch(&parts[1])?;
             let b = ch(&parts[2])?;
             let a = match parts.get(3) {
-                Some(p) if p.ends_with('%') => {
-                    p.trim_end_matches('%').parse::<f32>().ok()? / 100.0
-                }
+                Some(p) if p.ends_with('%') => p.trim_end_matches('%').parse::<f32>().ok()? / 100.0,
                 Some(p) => p.parse::<f32>().ok()?,
                 None => 1.0,
             };
@@ -869,7 +884,13 @@ fn parse_color(s: &str) -> Option<Rgba> {
             let a = parts
                 .get(3)
                 .and_then(|p| p.trim_end_matches('%').parse::<f32>().ok())
-                .map(|v| if parts[3].ends_with('%') { v / 100.0 } else { v })
+                .map(|v| {
+                    if parts[3].ends_with('%') {
+                        v / 100.0
+                    } else {
+                        v
+                    }
+                })
                 .unwrap_or(1.0);
             return Some(hsl_to_rgba(h, sa, l, a));
         }
@@ -977,7 +998,9 @@ mod tests {
         }
         let spans = find(&root).expect("rich flow exists");
         assert!(spans.iter().any(|s| s.bold && s.text.contains("bold")));
-        assert!(spans.iter().any(|s| s.underline && s.text.contains("linked")));
+        assert!(spans
+            .iter()
+            .any(|s| s.underline && s.text.contains("linked")));
         assert!(spans.iter().any(|s| !s.bold && s.text.contains("plain")));
     }
 
@@ -1008,7 +1031,9 @@ mod tests {
         assert!(parse_color("#aabbccdd").map(|c| c.a < 1.0).unwrap_or(false));
         let c = parse_color("rgba(255, 0, 0, 0.5)").unwrap();
         assert!(c.r > 0.99 && (c.a - 0.5).abs() < 0.01);
-        assert!(parse_color("hsl(120, 50%, 50%)").map(|c| c.g > c.r).unwrap_or(false));
+        assert!(parse_color("hsl(120, 50%, 50%)")
+            .map(|c| c.g > c.r)
+            .unwrap_or(false));
         assert!(parse_color("rebeccapurple").is_some());
         let sh = parse_shadow("0 4px 12px rgba(0,0,0,0.4)").unwrap();
         assert!((sh.dy - 4.0).abs() < 0.01 && (sh.blur - 12.0).abs() < 0.01);

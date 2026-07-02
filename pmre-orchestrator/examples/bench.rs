@@ -122,23 +122,43 @@ fn main() {
     let n = 40u32;
 
     println!("PMRE render benchmark  ({w}x{h}, {n} frames each, release build)");
-    println!("GPU backend: {}\n", pmre_orchestrator::gpu_bloom::gpu_backend_name());
+    println!(
+        "GPU backend: {}\n",
+        pmre_orchestrator::gpu_bloom::gpu_backend_name()
+    );
 
     // Warm up the GPU path (first call initialises the wgpu device + compiles shaders)
     drop(render_uxi_quality(&root, w, h, bg(), Quality::GpuFull));
 
-    let n_cpu = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    let n_cpu = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
     println!("CPU threads available: {n_cpu}\n");
 
     let tiers: &[(&str, Quality)] = &[
         ("CPU  Fast           — no post           ", Quality::Fast),
         ("CPU  Balanced       — bloom σ=3  r=6   ", Quality::Balanced),
         ("CPU  Full           — bloom σ=5  r=12  ", Quality::Full),
-        ("PAR  Balanced (FQ)  — bloom σ=3  r=6   ", Quality::ParallelBalanced),
-        ("PAR  Full     (FQ)  — bloom σ=5  r=12  ", Quality::ParallelFull),
-        ("BUS  Balanced (lanes)— bloom σ=3  r=6  ", Quality::TiledBalanced),
-        ("BUS  Full     (lanes)— bloom σ=5  r=12 ", Quality::TiledFull),
-        ("GPU  Balanced       — bloom σ=3  r=6   ", Quality::GpuBalanced),
+        (
+            "PAR  Balanced (FQ)  — bloom σ=3  r=6   ",
+            Quality::ParallelBalanced,
+        ),
+        (
+            "PAR  Full     (FQ)  — bloom σ=5  r=12  ",
+            Quality::ParallelFull,
+        ),
+        (
+            "BUS  Balanced (lanes)— bloom σ=3  r=6  ",
+            Quality::TiledBalanced,
+        ),
+        (
+            "BUS  Full     (lanes)— bloom σ=5  r=12 ",
+            Quality::TiledFull,
+        ),
+        (
+            "GPU  Balanced       — bloom σ=3  r=6   ",
+            Quality::GpuBalanced,
+        ),
         ("GPU  Full           — bloom σ=5  r=12  ", Quality::GpuFull),
     ];
 

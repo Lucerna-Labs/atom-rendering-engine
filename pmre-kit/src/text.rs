@@ -151,7 +151,15 @@ pub fn draw_styled<S: Surface>(
                 pen_x += 6.0 * cs;
             }
             if underline && pen_x > origin.x {
-                rule(fb, origin.x, pen_x, origin.y + 8.0 * cs, cs.max(1.0), color, clip);
+                rule(
+                    fb,
+                    origin.x,
+                    pen_x,
+                    origin.y + 8.0 * cs,
+                    cs.max(1.0),
+                    color,
+                    clip,
+                );
             }
         }
     }
@@ -191,7 +199,15 @@ fn blit<S: Surface>(
 }
 
 /// Fill the horizontal rule `[x0, x1) × [y, y+th)` (underlines).
-fn rule<S: Surface>(fb: &mut S, x0: f32, x1: f32, y: f32, th: f32, color: Rgba, clip: Option<Bounds>) {
+fn rule<S: Surface>(
+    fb: &mut S,
+    x0: f32,
+    x1: f32,
+    y: f32,
+    th: f32,
+    color: Rgba,
+    clip: Option<Bounds>,
+) {
     let (cx0, cy0, cx1, cy1) = clip_box(fb, clip);
     let (rlo, rhi) = fb.row_range();
     let xa = (x0.round() as i32).max(cx0);

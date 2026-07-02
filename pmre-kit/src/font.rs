@@ -463,7 +463,11 @@ impl Font {
                 (a, b)
             };
             // ARGS_ARE_XY_VALUES; point-matching args are treated as no offset
-            let (dx, dy) = if flags & 0x0002 != 0 { (dx, dy) } else { (0.0, 0.0) };
+            let (dx, dy) = if flags & 0x0002 != 0 {
+                (dx, dy)
+            } else {
+                (0.0, 0.0)
+            };
             let f2 = |o: usize| rd_i16(d, o).unwrap_or(0) as f32 / 16384.0;
             let (a, b, c, dd) = if flags & 0x0008 != 0 {
                 let s = f2(p);
@@ -508,10 +512,7 @@ impl Font {
             return g.clone();
         }
         let g = Arc::new(self.rasterize(gid, q as f32 / 4.0));
-        self.rasters
-            .lock()
-            .unwrap()
-            .insert((gid, q), g.clone());
+        self.rasters.lock().unwrap().insert((gid, q), g.clone());
         g
     }
 
@@ -617,7 +618,13 @@ fn flatten_quad(p0: (f32, f32), c: (f32, f32), p1: (f32, f32), poly: &mut Vec<(f
 /// Accumulate the signed-area contribution of one line segment into `acc` (row-major,
 /// `bw` floats per row). Rows then prefix-sum to exact analytic coverage — the classic
 /// font-rs accumulation algorithm, with bounds-safe writes.
-pub(crate) fn accumulate_line(acc: &mut [f32], bw: usize, h: usize, p0: (f32, f32), p1: (f32, f32)) {
+pub(crate) fn accumulate_line(
+    acc: &mut [f32],
+    bw: usize,
+    h: usize,
+    p0: (f32, f32),
+    p1: (f32, f32),
+) {
     if p0.1 == p1.1 {
         return; // horizontal edges contribute no winding
     }
@@ -982,9 +989,17 @@ mod tests {
             s += acc[row + c];
             cov[c] = s.abs().min(1.0);
         }
-        assert!((cov[2] - 0.5).abs() < 0.05, "left edge ~half covered: {}", cov[2]);
+        assert!(
+            (cov[2] - 0.5).abs() < 0.05,
+            "left edge ~half covered: {}",
+            cov[2]
+        );
         assert!(cov[3] > 0.99 && cov[4] > 0.99, "interior full");
-        assert!((cov[5] - 0.5).abs() < 0.05, "right edge ~half covered: {}", cov[5]);
+        assert!(
+            (cov[5] - 0.5).abs() < 0.05,
+            "right edge ~half covered: {}",
+            cov[5]
+        );
         assert!(cov[6] < 0.01, "outside empty");
     }
 

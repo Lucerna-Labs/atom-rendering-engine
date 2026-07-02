@@ -683,7 +683,13 @@ fn tiled(
 
 /// Apply additive Gaussian bloom to `fb` using the given `strat`. Output matches
 /// `post::bloom(fb, threshold, sigma, radius)` within float-reassociation error.
-pub fn bloom_with(fb: &mut Framebuffer, threshold: f32, sigma: f32, radius: usize, strat: Strategy) {
+pub fn bloom_with(
+    fb: &mut Framebuffer,
+    threshold: f32,
+    sigma: f32,
+    radius: usize,
+    strat: Strategy,
+) {
     let w = fb.width as usize;
     let h = fb.height as usize;
     if w == 0 || h == 0 {

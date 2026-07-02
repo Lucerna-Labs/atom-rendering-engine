@@ -11,7 +11,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex};
 
 struct Inner<T> {
-    items:  VecDeque<T>,
+    items: VecDeque<T>,
     sealed: bool,
 }
 
@@ -25,7 +25,10 @@ impl<T: Send + 'static> FairQueue<T> {
     pub fn new() -> Self {
         Self {
             state: Arc::new((
-                Mutex::new(Inner { items: VecDeque::new(), sealed: false }),
+                Mutex::new(Inner {
+                    items: VecDeque::new(),
+                    sealed: false,
+                }),
                 Condvar::new(),
             )),
         }
@@ -67,7 +70,9 @@ impl<T: Send + 'static> FairQueue<T> {
 
 impl<T: Send + 'static> Clone for FairQueue<T> {
     fn clone(&self) -> Self {
-        Self { state: Arc::clone(&self.state) }
+        Self {
+            state: Arc::clone(&self.state),
+        }
     }
 }
 

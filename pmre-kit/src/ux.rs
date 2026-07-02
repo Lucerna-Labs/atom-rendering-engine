@@ -258,7 +258,10 @@ pub enum UxNode {
     },
     /// Inline flow of styled spans that word-wrap together; `align` places each
     /// wrapped line horizontally within the node's rect.
-    Rich { spans: Vec<Span>, align: Align },
+    Rich {
+        spans: Vec<Span>,
+        align: Align,
+    },
 }
 
 impl UxNode {

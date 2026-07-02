@@ -127,10 +127,7 @@ where
                 while let Some(row) = q.pop() {
                     // SAFETY: each row consumed by exactly one thread; ranges never overlap.
                     let row_slice = unsafe {
-                        std::slice::from_raw_parts_mut(
-                            (ptr as *mut Rgba).add(row * w),
-                            w,
-                        )
+                        std::slice::from_raw_parts_mut((ptr as *mut Rgba).add(row * w), w)
                     };
                     f(row, row_slice);
                 }
@@ -182,9 +179,9 @@ pub fn bloom(fb: &mut Framebuffer, threshold: f32, sigma: f32, radius: usize) {
 /// all available CPU threads. The three separable passes (bright, H-blur,
 /// V-blur + composite) are each parallelised by row.
 pub fn bloom_parallel(fb: &mut Framebuffer, threshold: f32, sigma: f32, radius: usize) {
-    let n  = thread_count();
-    let w  = fb.width  as usize;
-    let h  = fb.height as usize;
+    let n = thread_count();
+    let w = fb.width as usize;
+    let h = fb.height as usize;
     let kernel = gaussian_kernel(sigma, radius);
     let orig: Vec<Rgba> = fb.pixels().to_vec();
 

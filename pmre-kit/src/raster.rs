@@ -59,7 +59,9 @@ pub fn scan_convert<S: Surface>(cmd: &DrawCmd, surf: &mut S, clip: Option<Bounds
         convert_rows(cmd, surf, bounds, aa, |x, y| Vec2::new(x - t.e, y - t.f));
     } else {
         let inv = t.inverse();
-        convert_rows(cmd, surf, bounds, aa, move |x, y| inv.apply(Vec2::new(x, y)));
+        convert_rows(cmd, surf, bounds, aa, move |x, y| {
+            inv.apply(Vec2::new(x, y))
+        });
     }
 }
 

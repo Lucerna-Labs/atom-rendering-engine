@@ -291,10 +291,8 @@ fn measure_inner(node: &UxNode, avail_w: Option<f32>) -> (f32, f32) {
                 Dir::Row => None,
             };
             let n = children.len();
-            let firsts: Vec<(f32, f32)> = children
-                .iter()
-                .map(|ch| measure(ch, child_avail))
-                .collect();
+            let firsts: Vec<(f32, f32)> =
+                children.iter().map(|ch| measure(ch, child_avail)).collect();
             let mut main = 0.0f32;
             let mut cross = 0.0f32;
             for (i, &(cw, chh)) in firsts.iter().enumerate() {

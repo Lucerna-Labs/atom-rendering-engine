@@ -38,7 +38,11 @@ fn lime() -> Rgba {
 fn glow_dot(col: Rgba, size: f32) -> UxNode {
     let r = size / 2.0;
     UxNode::boxed(
-        Style::row().w(Dim::Px(size)).h(Dim::Px(size)).radius(r).bg(col),
+        Style::row()
+            .w(Dim::Px(size))
+            .h(Dim::Px(size))
+            .radius(r)
+            .bg(col),
         vec![],
     )
 }
@@ -209,7 +213,8 @@ fn run_radius(snapshot: &[Rgba], w: u32, h: u32, sigma: f32, radius: usize, iter
                 let diff = max_diff(vfb.pixels(), &reference);
 
                 let ms = time_strategy(snapshot, w, h, threshold, sigma, radius, strat, iters);
-                let is_baseline = d == Dispatch::Serial && s == Structure::Separable && a == Arith::Scalar;
+                let is_baseline =
+                    d == Dispatch::Serial && s == Structure::Separable && a == Arith::Scalar;
                 rows.push(Row {
                     label: format!(
                         "{}  {}  {}",
@@ -238,12 +243,19 @@ fn run_radius(snapshot: &[Rgba], w: u32, h: u32, sigma: f32, radius: usize, iter
     }
     let gpu_ms = gpu_total * 1000.0 / iters as f64;
 
-    let baseline_ms = rows.iter().find(|r| r.is_baseline).map(|r| r.ms).unwrap_or(0.0);
+    let baseline_ms = rows
+        .iter()
+        .find(|r| r.is_baseline)
+        .map(|r| r.ms)
+        .unwrap_or(0.0);
 
     rows.sort_by(|a, b| a.ms.partial_cmp(&b.ms).unwrap());
 
     println!("\n── bloom σ={sigma}  r={radius}  ({w}x{h}, {iters} iters/strategy) ──");
-    println!("   {:<26}  {:>9}  {:>7}  {:>9}  {:>6}", "strategy", "ms/frame", "fps", "vs base", "valid");
+    println!(
+        "   {:<26}  {:>9}  {:>7}  {:>9}  {:>6}",
+        "strategy", "ms/frame", "fps", "vs base", "valid"
+    );
     for r in &rows {
         let speedup = if r.ms > 0.0 { baseline_ms / r.ms } else { 0.0 };
         let valid = if r.diff < 1.0e-3 { "ok" } else { "DRIFT" };
@@ -268,7 +280,11 @@ fn run_radius(snapshot: &[Rgba], w: u32, h: u32, sigma: f32, radius: usize, iter
     );
 
     // Winner among CPU strategies that stayed faithful to the reference.
-    if let Some(best) = rows.iter().filter(|r| r.diff < 1.0e-3).min_by(|a, b| a.ms.partial_cmp(&b.ms).unwrap()) {
+    if let Some(best) = rows
+        .iter()
+        .filter(|r| r.diff < 1.0e-3)
+        .min_by(|a, b| a.ms.partial_cmp(&b.ms).unwrap())
+    {
         println!(
             "   → fastest valid CPU: {}  at {:.2} ms ({:.2}x over baseline)",
             best.label.trim(),
@@ -286,7 +302,9 @@ fn main() {
     let base = render_uxi(&build_scene(), w, h, bg());
     let snapshot = base.pixels().to_vec();
 
-    let n_cpu = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    let n_cpu = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
     println!("PMRE bloom strategy sweep  ({w}x{h}, release build)");
     println!("GPU backend: {}", gpu_bloom::gpu_backend_name());
     println!("CPU threads available: {n_cpu}");
