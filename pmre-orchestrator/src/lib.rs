@@ -7,7 +7,22 @@
 
 use std::collections::HashMap;
 
+#[cfg(feature = "gpu")]
 pub mod gpu_bloom;
+
+/// CPU-fallback shim used when the `gpu` feature is off: the GPU bloom tiers reuse the
+/// CPU bloom (identical output), so `Quality::Gpu*` keeps working and the default build
+/// stays dependency-free.
+#[cfg(not(feature = "gpu"))]
+pub mod gpu_bloom {
+    use pmre_kit::framebuffer::Framebuffer;
+    pub fn gpu_bloom(fb: &mut Framebuffer, threshold: f32, sigma: f32, radius: usize) {
+        pmre_kit::post::bloom(fb, threshold, sigma, radius);
+    }
+    pub fn gpu_backend_name() -> &'static str {
+        "cpu (gpu feature disabled)"
+    }
+}
 
 use pmre_kit::{
     atoms,

@@ -28,7 +28,8 @@ Two crates, and only two, per the Composition doctrine:
   Zero dependencies.
 - **`pmre-orchestrator`** — *the orchestrator*: all policy, no mechanism. Painter order, the
   interaction state machine (hover / press / click / toggle / scroll / drag), scrollbars, and
-  the resize loop. It drives the kit; it never touches a pixel itself. Zero runtime dependencies.
+  the resize loop. It drives the kit; it never touches a pixel itself. Zero dependencies by default
+  (the optional `gpu` feature adds wgpu for the GPU bloom tier).
 
 The pipeline is pure composition all the way to pixels:
 
@@ -112,9 +113,10 @@ cargo run -p pmre-orchestrator --example ui
 cargo run -p pmre-orchestrator --example app
 ```
 
-Each headless example writes its image to the working directory. **Nothing pulls in any
+Each headless example writes its image to the working directory. **The default build pulls in no
 dependency** — `cargo tree` shows the whole workspace, library *and* examples, depending on zero
-external crates. The live window (`app`) calls the OS windowing API directly via raw FFI.
+external crates (the optional `gpu` feature adds `wgpu` for GPU-accelerated bloom). The live
+window (`app`) calls the OS windowing API directly via raw FFI.
 
 ## Tests
 
@@ -122,6 +124,14 @@ external crates. The live window (`app`) calls the OS windowing API directly via
 cargo test --workspace        # rasterizer, gradients, stroking, layout coverage
 cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+## Footprint
+
+Because the default build has zero dependencies, the binaries are tiny: a complete UI app
+compiles to **~150-400 KB** (the calculator and HTML demos are ~0.34 MB). Enabling the optional
+GPU bloom tier links `wgpu`, which brings a GPU-using binary to **~7.7 MB** - the entire
+difference is wgpu. For typical 2D UI the CPU path is what you want; the GPU tier is there for
+heavier effects later without swapping the renderer.
 
 ## License
 

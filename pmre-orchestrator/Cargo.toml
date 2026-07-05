@@ -7,8 +7,14 @@ description = "The single orchestrator: all policy, no mechanism. Drives the kit
 
 [dependencies]
 pmre-kit = { path = "../pmre-kit" }
-wgpu     = "22"
-pollster = "0.3"
+wgpu     = { version = "22", optional = true }
+pollster = { version = "0.3", optional = true }
+
+[features]
+default = []
+# Opt-in GPU-accelerated bloom tier (wgpu compute). Off by default so the default build
+# stays zero-dependency; the Quality::Gpu* tiers fall back to CPU when it is absent.
+gpu = ["dep:wgpu", "dep:pollster"]
 
 [[example]]
 name = "demo"
@@ -30,6 +36,7 @@ path = "examples/bloom.rs"
 name = "bench"
 path = "examples/bench.rs"
 
-# No dependencies anywhere. The live window (examples/app.rs) calls the OS windowing API
-# directly via raw FFI (user32/gdi32) instead of a wrapper crate, so the whole workspace —
-# library and examples — depends on zero external crates.
+# Zero dependencies by default. The live window (examples/app.rs) calls the OS windowing API
+# directly via raw FFI (user32/gdi32) instead of a wrapper crate, so the default build of the
+# whole workspace — library and examples — depends on zero external crates. The optional
+# `gpu` feature adds wgpu for the GPU bloom tier.
