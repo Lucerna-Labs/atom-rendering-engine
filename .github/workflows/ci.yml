@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -19,6 +19,6 @@ jobs:
         run: cargo clippy --workspace --lib --tests -- -D warnings
       - name: Tests
         run: cargo test --workspace --lib
-# The window example (winit + softbuffer) and the other render examples are built and run
+# The window example (raw Win32 FFI) and the other render examples are built and run
 # locally during development; CI focuses on the dependency-free library crates so it stays
 # fast and green without OS windowing libraries.
