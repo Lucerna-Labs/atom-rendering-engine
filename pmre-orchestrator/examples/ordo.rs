@@ -1,5 +1,5 @@
 //! Ordo dashboard — Ordo's deep-navy/teal design language rendered through the
-//! Primitive Math Rendering Engine. No Electron, no Tauri, no browser — pure math.
+//! Atom Rendering Engine. No Electron, no Tauri, no browser — pure math.
 //!
 //! Run: cargo run -p pmre-orchestrator --example ordo
 

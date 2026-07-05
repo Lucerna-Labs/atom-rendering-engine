@@ -1,4 +1,4 @@
-# Primitive Math Rendering Engine — a self-renderer from pure math primitives.
+# Atom Rendering Engine — a self-renderer from pure math primitives.
 # Two members only, per the Composition doctrine: one kit + one orchestrator.
 [workspace]
 resolver = "2"

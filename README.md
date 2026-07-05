@@ -1,6 +1,6 @@
-# Primitive Math Rendering Engine
+# Atom Rendering Engine
 
-[![CI](https://github.com/Lucerna-Labs/primitive-math-rendering-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Lucerna-Labs/primitive-math-rendering-engine/actions/workflows/ci.yml)
+[![CI](https://github.com/Lucerna-Labs/atom-rendering-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Lucerna-Labs/atom-rendering-engine/actions/workflows/ci.yml)
 
 A [Lucerna Labs](https://github.com/Lucerna-Labs) project.
 **Building on the engine?** Start with the [Developer Guide](docs/DEVELOPER_GUIDE.md).

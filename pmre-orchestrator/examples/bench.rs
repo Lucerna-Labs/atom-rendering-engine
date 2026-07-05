@@ -121,7 +121,7 @@ fn main() {
     let (w, h) = (860u32, 380u32);
     let n = 40u32;
 
-    println!("PMRE render benchmark  ({w}x{h}, {n} frames each, release build)");
+    println!("Atom render benchmark  ({w}x{h}, {n} frames each, release build)");
     println!(
         "GPU backend: {}\n",
         pmre_orchestrator::gpu_bloom::gpu_backend_name()

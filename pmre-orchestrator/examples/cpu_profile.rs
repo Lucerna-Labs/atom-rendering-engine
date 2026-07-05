@@ -151,7 +151,7 @@ fn main() {
     let paint_serial = t_render_serial - t_layout;
     let paint_bus = t_render_bus - t_layout;
 
-    println!("PMRE CPU frame profile  ({w}x{h}, {n} iters, release, {n_cpu} cores)\n");
+    println!("Atom CPU frame profile  ({w}x{h}, {n} iters, release, {n_cpu} cores)\n");
     println!("  stage                    serial      lanes     speedup");
     println!(
         "  layout solve           {:7.2}ms        —           —",

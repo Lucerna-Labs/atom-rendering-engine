@@ -781,7 +781,7 @@ mod win {
             // bitmap-stretch us (that is what made the old window look blurry on hi-DPI).
             SetProcessDpiAwarenessContext(DPI_PER_MONITOR_V2);
             let class_name = wide("pmre_window");
-            let title = wide("Tasks \u{2014} Primitive Math Rendering Engine");
+            let title = wide("Tasks \u{2014} Atom Rendering Engine");
             let hinst = GetModuleHandleW(std::ptr::null());
             let wc = WndClassW {
                 style: CS_HREDRAW | CS_VREDRAW,

@@ -305,7 +305,7 @@ fn main() {
     let n_cpu = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
-    println!("PMRE bloom strategy sweep  ({w}x{h}, release build)");
+    println!("Atom bloom strategy sweep  ({w}x{h}, release build)");
     println!("GPU backend: {}", gpu_bloom::gpu_backend_name());
     println!("CPU threads available: {n_cpu}");
     println!("Axes: Dispatch{{Serial,FairQ,Atomic,Pool}} x Structure{{Separable,Tiled}} x Arith{{scalar,simd}}");
