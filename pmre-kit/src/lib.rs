@@ -8,6 +8,7 @@
 //! that makes a value judgement, that `if` belongs in the orchestrator.
 
 pub mod bloom_sweep;
+pub mod css;
 pub mod fair_queue;
 pub mod font;
 pub mod framebuffer;

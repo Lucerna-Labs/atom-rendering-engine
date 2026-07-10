@@ -295,7 +295,14 @@ fn run_radius(snapshot: &[Rgba], w: u32, h: u32, sigma: f32, radius: usize, iter
 }
 
 fn main() {
-    let (w, h) = (860u32, 380u32);
+    let mut args = std::env::args().skip(1);
+    let (w, h) = match (args.next(), args.next()) {
+        (Some(w), Some(h)) => (
+            w.parse().expect("width must be a u32"),
+            h.parse().expect("height must be a u32"),
+        ),
+        _ => (860u32, 380u32),
+    };
     let iters = 30u32;
 
     // Render the scene once with no post, then snapshot the pixels.

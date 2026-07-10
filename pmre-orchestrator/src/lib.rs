@@ -101,6 +101,13 @@ fn paint_one_box<S: Surface>(surf: &mut S, laid: &LaidBox) {
                 y += line_h;
             }
         }
+        Painted::Image { image } => {
+            let clip = laid.clip.unwrap_or(pmre_kit::Bounds {
+                min: pmre_kit::Vec2::new(0.0, 0.0),
+                max: pmre_kit::Vec2::new(surf.width() as f32, surf.height() as f32),
+            });
+            raster::blit_image(surf, laid.rect, image, clip);
+        }
         Painted::Rich { spans, align } => {
             let max_w = laid.rect.max.x - laid.rect.min.x;
             let (lines, line_h) = layout::rich_lines(spans, Some(max_w));
@@ -177,6 +184,9 @@ fn paint_y_extent(b: &LaidBox) -> (f32, f32) {
             let (lines, line_h) = layout::rich_lines(spans, Some(max_w));
             hi = hi.max(b.rect.min.y + lines.len() as f32 * line_h);
         }
+        // An image blit paints inside its own rect only; no shadow or wrap
+        // bleed, so the base rect y-range is the exact extent.
+        Painted::Image { .. } => {}
     }
     if let Some(c) = b.clip {
         lo = lo.max(c.min.y);
@@ -478,6 +488,10 @@ fn scale_boxes(boxes: &mut [LaidBox], s: f32) {
                     sp.size *= s;
                 }
             }
+            // Image pixel data doesn't scale — the rect above already scaled.
+            // blit_image resamples on the fly against the (possibly rescaled)
+            // dst rect, so no per-image mutation is needed.
+            Painted::Image { .. } => {}
         }
     }
 }

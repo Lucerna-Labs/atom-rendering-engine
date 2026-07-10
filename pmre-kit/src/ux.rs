@@ -8,6 +8,8 @@
 //! orchestrator and the app's state-driven `build` function.
 
 use crate::paint::Rgba;
+use crate::raster::Image;
+use std::sync::Arc;
 
 /// Main-axis direction of a box's children (the flex axis).
 #[derive(Clone, Copy, Debug)]
@@ -215,6 +217,11 @@ impl Style {
 
 /// One styled run inside a rich-text flow. Spans wrap together as a single paragraph,
 /// so bold/linked/colored fragments flow inline the way HTML text does.
+///
+/// `href` carries an `<a href="...">`'s target, if this span is (or is nested inside)
+/// a link — plain data, no navigation policy here. `layout::hit_test_link` finds which
+/// wrapped piece of text a point falls on and returns its href; what to do with that
+/// href (resolve it, navigate, ignore it) is entirely the embedding app's call.
 #[derive(Clone, Debug)]
 pub struct Span {
     pub text: String,
@@ -222,6 +229,7 @@ pub struct Span {
     pub color: Rgba,
     pub bold: bool,
     pub underline: bool,
+    pub href: Option<String>,
 }
 
 impl Span {
@@ -232,6 +240,7 @@ impl Span {
             color,
             bold: false,
             underline: false,
+            href: None,
         }
     }
     pub fn bold(mut self) -> Span {
@@ -242,9 +251,14 @@ impl Span {
         self.underline = true;
         self
     }
+    pub fn link(mut self, href: impl Into<String>) -> Span {
+        self.href = Some(href.into());
+        self
+    }
 }
 
-/// A UXI node: a styled box with children, a run of plain text, or a rich inline flow.
+/// A UXI node: a styled box with children, a run of plain text, a rich inline
+/// flow, or a bitmap image blit.
 #[derive(Clone, Debug)]
 pub enum UxNode {
     Box {
@@ -261,6 +275,14 @@ pub enum UxNode {
     Rich {
         spans: Vec<Span>,
         align: Align,
+    },
+    /// A bitmap image blitted at the box's solved rect. `style` carries the
+    /// width/height (typically `Dim::Px` matching the HTML img `width`/`height`
+    /// attributes). `Arc` so the same decoded image can be shared across
+    /// multiple `<img>` tags with the same `src` without a re-decode.
+    Image {
+        style: Style,
+        image: Arc<Image>,
     },
 }
 
@@ -280,5 +302,11 @@ impl UxNode {
             spans,
             align: Align::Start,
         }
+    }
+    /// A bitmap image at the solved rect defined by `style` (width/height).
+    /// Callers holding the `Arc` avoid re-decoding when the same image
+    /// appears multiple times.
+    pub fn image(style: Style, image: Arc<Image>) -> UxNode {
+        UxNode::Image { style, image }
     }
 }

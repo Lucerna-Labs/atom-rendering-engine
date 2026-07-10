@@ -5,7 +5,9 @@
 
 use crate::geom::{Affine, Vec2};
 use crate::paint::{Bounds, DrawCmd, Paint, Rgba, Shape};
+use crate::raster::Image;
 use crate::ux::{Align, Dim, Dir, Edges, Justify, Role, Shadow, Span, Style, UxNode};
+use std::sync::Arc;
 
 /// What a laid-out box paints as.
 #[derive(Clone, Debug)]
@@ -23,6 +25,8 @@ pub enum Painted {
     },
     /// A rich inline flow; the painter re-breaks the spans at the solved rect width.
     Rich { spans: Vec<Span>, align: Align },
+    /// A bitmap image blit; painter calls `raster::blit_image` at the solved rect.
+    Image { image: Arc<Image> },
 }
 
 /// A node with its solved device-space rectangle and interaction metadata.
@@ -80,6 +84,69 @@ fn contains(b: Bounds, x: f32, y: f32) -> bool {
     x >= b.min.x && x < b.max.x && y >= b.min.y && y < b.max.y
 }
 
+/// Topmost `<a href="...">` hyperlink whose rendered text contains the
+/// point, returning its href. Separate from `hit_test`: that one resolves to
+/// a box-level `(id, Role)` pair for boxes the caller tagged interactive
+/// itself (`Style::button`/`input`/`scroll`); a link's text rides inside its
+/// parent `Rich` box's spans with no `LaidBox`/id of its own; a whole
+/// paragraph can be one `LaidBox`, of which only one wrapped word is the
+/// actual link. So this re-breaks that box's spans at hit-test time (the same
+/// way the painter re-breaks them to draw) and finds which wrapped piece the
+/// point falls on.
+pub fn hit_test_link(boxes: &[LaidBox], x: f32, y: f32) -> Option<String> {
+    let mut found = None;
+    for b in boxes {
+        if !contains(b.rect, x, y) {
+            continue;
+        }
+        if let Some(clip) = b.clip {
+            if !contains(clip, x, y) {
+                continue;
+            }
+        }
+        if let Painted::Rich { spans, align } = &b.kind {
+            if let Some(href) = hit_test_rich_piece(b.rect, spans, *align, x, y) {
+                found = Some(href); // later in pre-order = drawn on top
+            }
+        }
+    }
+    found
+}
+
+/// Find which wrapped piece of a `Rich` flow (already known to contain
+/// `(x, y)` by its box rect) covers the point horizontally, within whichever
+/// wrapped line covers it vertically. Mirrors `align`'s line placement so the
+/// x math matches what actually got drawn.
+fn hit_test_rich_piece(
+    rect: Bounds,
+    spans: &[Span],
+    align: Align,
+    x: f32,
+    y: f32,
+) -> Option<String> {
+    let w = rect.max.x - rect.min.x;
+    let (lines, line_h) = rich_lines(spans, Some(w).filter(|w| *w > 0.0));
+    if line_h <= 0.0 {
+        return None;
+    }
+    let rel_y = y - rect.min.y;
+    let line_i = (rel_y / line_h).floor();
+    if line_i < 0.0 {
+        return None;
+    }
+    let line = lines.get(line_i as usize)?;
+    let line_x0 = match align {
+        Align::Start | Align::Stretch => 0.0,
+        Align::Center => (w - line.width) / 2.0,
+        Align::End => w - line.width,
+    };
+    let rel_x = x - rect.min.x - line_x0;
+    line.pieces
+        .iter()
+        .find(|p| rel_x >= p.x && rel_x < p.x + p.width)
+        .and_then(|p| p.href.clone())
+}
+
 /// Text advance width — single source of truth shared with the glyph rasterizer.
 pub fn text_width(content: &str, size: f32) -> f32 {
     crate::text::advance(content, size)
@@ -97,6 +164,9 @@ pub struct RichPiece {
     pub underline: bool,
     pub x: f32,
     pub width: f32,
+    /// Carried straight from the source `Span.href` — set when this piece
+    /// came from text inside an `<a href="...">`. `hit_test_link` reads it.
+    pub href: Option<String>,
 }
 
 /// One wrapped line of a rich flow.
@@ -170,6 +240,7 @@ pub fn rich_lines(spans: &[Span], max_width: Option<f32>) -> (Vec<RichLine>, f32
                     underline: span.underline,
                     x,
                     width: word_w,
+                    href: span.href.clone(),
                 });
                 cur.width = x + word_w;
                 cur_span = Some(si);
@@ -218,7 +289,7 @@ fn clip_to(parent: Option<Bounds>, inner: Bounds) -> Option<Bounds> {
 
 fn node_dim(node: &UxNode, want_width: bool) -> Dim {
     match node {
-        UxNode::Box { style, .. } => {
+        UxNode::Box { style, .. } | UxNode::Image { style, .. } => {
             if want_width {
                 style.width
             } else {
@@ -229,10 +300,10 @@ fn node_dim(node: &UxNode, want_width: bool) -> Dim {
     }
 }
 
-/// Margin edges of a node (only boxes carry style).
+/// Margin edges of a node (only boxes and images carry style).
 fn node_margin(node: &UxNode) -> Edges {
     match node {
-        UxNode::Box { style, .. } => style.margin,
+        UxNode::Box { style, .. } | UxNode::Image { style, .. } => style.margin,
         _ => Edges::default(),
     }
 }
@@ -255,6 +326,31 @@ fn measure(node: &UxNode, avail_w: Option<f32>) -> (f32, f32) {
 
 fn measure_inner(node: &UxNode, avail_w: Option<f32>) -> (f32, f32) {
     match node {
+        UxNode::Image { style, image } => {
+            // Natural size from the decoded image; the box style's width/height
+            // override this (Px == exact, Auto/Flex/Pct fall back to natural).
+            let (natural_w, natural_h) = (image.width as f32, image.height as f32);
+            let w = match style.width {
+                Dim::Px(v) => v,
+                Dim::Pct(p) => avail_w.map(|w| w * p / 100.0).unwrap_or(natural_w),
+                _ => natural_w,
+            };
+            let h = match style.height {
+                Dim::Px(v) => v,
+                _ => {
+                    // Preserve aspect ratio when only one dim is set.
+                    if natural_w > 0.0 && matches!(style.width, Dim::Px(_)) {
+                        w * natural_h / natural_w
+                    } else {
+                        natural_h
+                    }
+                }
+            };
+            (
+                w + style.margin.l + style.margin.r,
+                h + style.margin.t + style.margin.b,
+            )
+        }
         UxNode::Text { content, size, .. } => {
             let single = text_width(content, *size);
             let line_h = size * 1.3;
@@ -410,6 +506,19 @@ fn layout_node(
                 },
                 id: None,
                 role: Role::None,
+                clip,
+                content_len: 0.0,
+            });
+        }
+        UxNode::Image { style, image } => {
+            let rect = inset(rect, style.margin, 0.0);
+            out.push(LaidBox {
+                rect,
+                kind: Painted::Image {
+                    image: image.clone(),
+                },
+                id: style.id,
+                role: style.role,
                 clip,
                 content_len: 0.0,
             });
@@ -675,5 +784,111 @@ pub fn cmds_for(b: &LaidBox, out: &mut Vec<DrawCmd>) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod link_tests {
+    use super::*;
+
+    fn link_span(text: &str, href: &str) -> Span {
+        let mut s = Span::new(text, 16.0, Rgba::rgb8(96, 165, 250));
+        s.href = Some(href.to_string());
+        s
+    }
+
+    fn plain_span(text: &str) -> Span {
+        Span::new(text, 16.0, Rgba::rgb8(228, 232, 240))
+    }
+
+    #[test]
+    fn hit_test_link_finds_href_at_the_links_position_not_elsewhere() {
+        let spans = vec![
+            plain_span("see "),
+            link_span("this link", "https://example.com/x"),
+            plain_span(" now"),
+        ];
+        let root = UxNode::boxed(
+            Style::col().w(Dim::Px(400.0)).h(Dim::Px(60.0)),
+            vec![UxNode::Rich {
+                spans,
+                align: Align::Start,
+            }],
+        );
+        let viewport = Bounds {
+            min: Vec2::new(0.0, 0.0),
+            max: Vec2::new(400.0, 60.0),
+        };
+        let boxes = solve(&root, viewport, &|_| 0.0);
+
+        let rich = boxes
+            .iter()
+            .find(|b| matches!(b.kind, Painted::Rich { .. }))
+            .expect("rich box present");
+        let rich_spans = match &rich.kind {
+            Painted::Rich { spans, .. } => spans,
+            _ => unreachable!(),
+        };
+        let (lines, _line_h) = rich_lines(rich_spans, Some(rich.rect.max.x - rich.rect.min.x));
+        let link_piece = lines[0]
+            .pieces
+            .iter()
+            .find(|p| p.href.is_some())
+            .expect("link piece present");
+
+        let mid_y = rich.rect.min.y + 8.0; // inside the first (only) wrapped line
+        let link_mid_x = rich.rect.min.x + link_piece.x + link_piece.width / 2.0;
+        assert_eq!(
+            hit_test_link(&boxes, link_mid_x, mid_y).as_deref(),
+            Some("https://example.com/x"),
+            "a point inside the link's rendered text should resolve to its href"
+        );
+
+        let before_link_x = rich.rect.min.x + 2.0; // inside the "see " prefix
+        assert_eq!(
+            hit_test_link(&boxes, before_link_x, mid_y),
+            None,
+            "a point over plain (non-link) text should not resolve to a href"
+        );
+
+        let outside_box_y = rich.rect.max.y + 20.0;
+        assert_eq!(
+            hit_test_link(&boxes, link_mid_x, outside_box_y),
+            None,
+            "a point outside the box entirely should not resolve to a href"
+        );
+    }
+
+    #[test]
+    fn hit_test_link_respects_clip() {
+        // A link box whose own rect covers the query point, but whose clip
+        // window (e.g. a scroll region's visible band) doesn't, must not be
+        // hit-testable — mirrors how a scrolled-away row still "exists" at
+        // its laid-out rect but is clipped out of the visible viewport.
+        let spans = vec![link_span("clipped link", "https://example.com/y")];
+        let rect = Bounds {
+            min: Vec2::new(0.0, 0.0),
+            max: Vec2::new(200.0, 20.0),
+        };
+        let clip = Some(Bounds {
+            min: Vec2::new(0.0, 100.0),
+            max: Vec2::new(200.0, 120.0),
+        });
+        let boxes = vec![LaidBox {
+            rect,
+            kind: Painted::Rich {
+                spans,
+                align: Align::Start,
+            },
+            id: None,
+            role: Role::None,
+            clip,
+            content_len: 0.0,
+        }];
+        assert_eq!(
+            hit_test_link(&boxes, 50.0, 10.0),
+            None,
+            "inside the box's own rect but outside its clip window — must not hit"
+        );
     }
 }
