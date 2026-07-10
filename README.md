@@ -3,7 +3,16 @@
 [![CI](https://github.com/Lucerna-Labs/atom-rendering-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Lucerna-Labs/atom-rendering-engine/actions/workflows/ci.yml)
 
 A [Lucerna Labs](https://github.com/Lucerna-Labs) project. Created by [Jesse G. Alicea](https://github.com/Rekonquest).
-**Building on the engine?** Start with the [Developer Guide](docs/DEVELOPER_GUIDE.md).
+
+## Project status
+
+**Functional and under active refinement.** Atom Rendering Engine (this 2D engine) and the
+companion Atom 3D Engine are both functional, runnable engines today. Development is continuing
+on API polish, performance, platform integration, tooling, and other refinements. Functional does
+not mean API-frozen yet, so production integrations should pin a tested Git commit.
+
+**Integrating the engine into an app?** Start with the [Integration Guide](ENGINE-INTEGRATION.md).
+**Extending the engine itself?** Use the [Developer Guide](docs/DEVELOPER_GUIDE.md).
 
 A from-scratch 2D UI rendering engine built **entirely from mathematical primitives** â€”
 no GPU vector library (no Vello, Skia, or Cairo), no web engine, no Tauri/Electron. Shapes

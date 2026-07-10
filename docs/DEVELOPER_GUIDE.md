@@ -5,7 +5,8 @@ How to embed, drive, and extend the Atom Rendering Engine.
 Atom Rendering Engine is a zero-dependency 2D UI engine: two crates, all CPU, everything built from a
 small set of mathematical primitives. This guide is for developers building apps on the
 engine or extending the engine itself. For the project overview, see the
-[README](../README.md).
+[README](../README.md). For dependency setup, event-loop wiring, framebuffer presentation,
+and update strategy, see the [Integration Guide](../ENGINE-INTEGRATION.md).
 
 ---
 
